@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from functools import reduce
 
 '''
 使用梯度下降算法训练一个线性函数对数据集进行划分
@@ -37,34 +38,50 @@ def grad_des_line_separate(datas, step=0.1):
 			break
 	return w
 
-def grad_des_regression(datas, iteration=100, step=1, initw=0, cost='LMS'):
+def grad_desent_regression(datas, iteration=100, step=1, initw=0, cost='LMS'):
 	'''
 	对于一个线性不可分的数据集: {(x1,o1),(x2,o2), ... ,(xn,on)}
 	找到一个线性函数，使得这个线性函数对整个数据集划分的误差最小
 	cost: 误差度量方式
 	LMS指最小均方差: ∑(oi-ti)**2，是一个比较常用的误差度量方式
-	LOGISTIC指逻辑函数，逻辑回归中使用样本相应逻辑概率的乘积来定义误差: ∏Pi
 	对数据集中的每个样本xi:
 	ti = wxi
 	cost = ∑(oi-ti)**2 = ∑(oi-wxi)**2
 	▽ w = ∑2(oi-wxi)xi
 	w = w + λ▽ w
 	重复这个过程至w收敛
+	LOGISTIC指逻辑函数，逻辑回归中使用样本相应逻辑概率的乘积来定义误差: ∏Pi
+	Pi = 1 / (1 + e**(-wxi))
+	cost = ln(∏Pi**oi(1-Pi)**(1-oi)) = ∑ln(Pi**oi(1-Pi)**(1-oi)) = -∑[oiln(1+e**(-wxi)) + (1-oi)ln(1+e**wxi)]
+	▽ w = ∑[oi/(1+e**wxi) - (1-oi)/(1+e**(-wxi))]xi
 	'''
 	if initw == 0: w = np.zeros(len(datas[0]) + 1)
 	elif initw == 'random': w = np.random.rand(len(datas[0]) + 1)
 	else: w = np.array(w)
 	print('init w is ' + str(w))
 
+	e = np.e
+	ln = np.log
+
 	for i in range(iteration):
 		delta = np.zeros(len(datas[0]) + 1)
 		step0 = step / (i * 2 + 1)
 		for x,o in datas:
 			x = np.array([1] + x)
-			delta = delta + (w.dot(x) - o) * x
+			if cost == 'LMS':
+				delta += (w.dot(x) - o) * x
+			elif cost == 'LOGISTIC':
+				if o == -1: o = 0
+				delta += (o / (1 + e ** w.dot(x)) - (1 - o) / (1 + e ** -w.dot(x))) * x
 		gradient = delta / np.sqrt(delta.dot(delta)) # 单位梯度向量
-		w = w - step0 * gradient # 梯度向量方向为误差上升最快方向，故取负为误差下降最快方向
-		error = sum([ w.dot(np.array([1] + x)) - o for x,o in datas ])
+
+		if cost == 'LMS':
+			w = w - step0 * gradient # 梯度向量方向为误差上升最快方向，故取负为误差下降最快方向
+			error = sum([ w.dot(np.array([1] + x)) - o for x,o in datas ])
+		elif cost == 'LOGISTIC':
+			w = w + step0 * gradient # 梯度向量方向为样本对应类别概率乘积上升最快方向
+			#error = -sum([ ln(1 + e ** -w.dot(np.array([1] + x))) if o == 1 else ln(1 + e ** w.dot(np.array([1] + x))) for x,o in datas ])
+			error = reduce(lambda x,y: x * y, [ 1 / (1 + e ** -w.dot(np.array([1] + x))) if o == 1 else 1 / (1 + e ** w.dot(np.array([1] + x))) for x,o in datas ])
 		print('step0 is ' + str(step0) + ', delta is ' + str(delta) + ', w is ' + str(w) + \
 				', slope is ' + str(- w[1] / w[2]) + ', error is ' + str(error))
 
@@ -109,8 +126,8 @@ colors = np.full(len(x), 'r', dtype=np.str)
 plt.scatter(x, y, s=25, c=colors, alpha=0.5)
 
 #w = grad_des_line_separate(datas)
-#w = grad_des_regression(datas, iteration=200)
-w = stoch_grad_desent_regression(datas, iteration=100)
+w = grad_desent_regression(datas, iteration=250, cost='LOGISTIC')
+#w = stoch_grad_desent_regression(datas, iteration=100)
 print('w is: ' + str(w))
 x = np.linspace(0, 10)
 y = -(w[0] + w[1] * x) / w[2]
