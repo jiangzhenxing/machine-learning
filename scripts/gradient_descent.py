@@ -17,6 +17,10 @@ LOGISTIC逻辑函数，最优即使样本相应类别逻辑概率的乘积最大
 '''
 e = np.e
 ln = np.log
+extend = lambda x: np.array([1] + x)    # 扩展样本数据，增加常数项
+model = lambda x: np.sqrt(x.dot(x))	# 向量模长
+normal = lambda x: x / model(x)		# 单位向量
+logistic = lambda x: 1 / (1 + e ** -x)	# 逻辑函
 
 def grad_des_line_separate(datas, step=0.1):
     '''
@@ -33,9 +37,7 @@ def grad_des_line_separate(datas, step=0.1):
         for x,t in datas:
             x = np.array([1] + x)
             o = np.sign(w.dot(x))
-#            print('o:' + str(o) + ' t:' + str(t) + ' x:' + str(x))
             dw = (t - o) * x
-#            print('dw: ' + str(dw))
             w = w + step * dw
         if (w == raw_w).all():
             break
@@ -123,14 +125,6 @@ def stoch_grad_desent_regression(datas, iteration=100, step=1, initw=0, cost='LM
         
     return w
 
-extend = lambda x: np.array([1] + x)
-# 向量模长
-model = lambda x: np.sqrt(x.dot(x))
-# 单位向量
-normal = lambda x: x / model(x)
-# 逻辑函数
-logistic = lambda x: 1 / (1 + e ** -x)
-
 # 一个以直线 y=x 为界的线性可分的数据集
 #datas = [ ([x,y],1) if x>y else ([x,y],-1) for x in range(10) for y in range(10) if x!=y ]
 # 一个线性不可分的数据集，大至以y=x分隔，在直线y=x附近有线性不可分的点
@@ -160,7 +154,7 @@ y = -(w[0] + w[1] * x) / w[2]
 line, = plt.plot(x, y, '--', linewidth=1)
 line.set_dashes([1,0])
 '''
-# 绘制逻辑回归函数图
+# 绘制逻辑回归数据点
 x = [ w.dot(extend(d[0])) for d in datas ]
 y = list(map(logistic, x))
 print('x is: \n' + str(x))
