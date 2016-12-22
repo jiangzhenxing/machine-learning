@@ -9,10 +9,10 @@ from functools import reduce
 1) 如果数据集是线性可分的
 梯度下降算法可以正确分类所有样本，过程收敛
 2) 如果数据集是线性不可分的
-可以找到一个线性函数，使得这个线性函数对整个数据集划分的误差最小
-对误差的度量可以使用不同的标准
-LMS最小均方差: ∑(oi-ti)**2，是一个比较常用的误差度量方式
-LOGISTIC逻辑函数，逻辑回归中使用样本相应类别逻辑概率的乘积来定义误差: ∏Pi
+可以找到一个最优线性函数，使得这个线性函数对整个数据集划分的效果最好
+对最优的度量可以使用不同的标准
+LMS最小均方差: ∑(oi-ti)**2，是一个比较常用的误差度量方式，最优即使数据集方差最小
+LOGISTIC逻辑函数，最优即使样本相应类别逻辑概率的乘积最大
 '''
 e = np.e
 ln = np.log
@@ -52,7 +52,7 @@ def grad_desent_regression(datas, iteration=100, step=1, initw=0, cost='LMS'):
     ▽ w = ∑2(oi-wxi)xi
     w = w + λ▽ w
     重复这个过程至w收敛
-    LOGISTIC指逻辑函数，逻辑回归中使用样本相应类别逻辑概率的乘积来定义误差: ∏Pi
+    LOGISTIC指逻辑函数，即使样本相应类别逻辑概率的乘积最大
     Pi = 1 / (1 + e**(-wxi))
     cost = ln(∏Pi**oi(1-Pi)**(1-oi)) = ∑ln(Pi**oi(1-Pi)**(1-oi)) = -∑[oiln(1+e**(-wxi)) + (1-oi)ln(1+e**wxi)]
     ▽ w = ∑[oi/(1+e**wxi) - (1-oi)/(1+e**(-wxi))]xi
@@ -90,9 +90,10 @@ def grad_desent_regression(datas, iteration=100, step=1, initw=0, cost='LMS'):
 def stoch_grad_desent_regression(datas, iteration=100, step=1, initw=0, cost='LMS'):
     '''
     随机梯度下降与梯度下降相似，
-    只是对数据集中的每个样本xi，梯度向量的方向取(oi-wxi)xi，
-    然后根据此梯度向量的方向更新w，不需要根据整个数据集样本的误差计算梯度向量
-    相当于为每个样本定义一个误差函数：cost = (oi-ti)**2 = (oi-wxi)**2 和梯度向量
+    只是对数据集中的每个样本xi，梯度向量的方向取(oi-wxi)xi，然后根据此梯度向量的方向更新w，不需要根据整个数据集样本的误差计算梯度向量
+    这相当于为每个样本定义一个误差函数：cost = (oi - ti) ** 2 = (oi - wxi) ** 2 和梯度向量(oi - wxi)xi
+    逻辑回归中目标函数为：-oiln(1 + e ** -wxi) - (1 - oi)ln(1 + e ** wxi)
+    梯度向量为：(oi / (1 + e ** wxi) - (1 - oi) / (1 + e ** -wxi))xi
     '''
     if initw == 0: w = np.zeros(len(datas[0]) + 1)
     elif initw == 'random': w = np.random.rand(len(datas[0]) + 1)
