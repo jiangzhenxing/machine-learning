@@ -28,7 +28,7 @@ logging.basicConfig(level=logging.INFO,
 class Node:
     '''
     神经网络的结点
-    包括权重向量，输出函数，导数，陨失函数
+    包括权重向量，输出函数，导数，陨失函数及其导数
     '''
     def __init__(self, weight, index, type=SIGMOID):
         self.weight = weight
