@@ -168,6 +168,7 @@ def scatter_datas(datas, c1=1, c2=-1):
 
 
 output_type = LINEAR
+output_type = SIGMOID
 c1 = 1
 c2 = 0 if output_type == SIGMOID else -1
 threshold = 0 if output_type == LINEAR else 0.5
@@ -182,7 +183,7 @@ datas2.extend([([9,8],c2), ([8,9],c1), ([8,7],c1), ([7,8],c2), ([7,6],c2), ([6,7
                ([1,0],c2), ([0,1],c1), ])
 
 datas = np.array(datas2)                    # 选择数据集
-ann = simple_back_propagation_ann(datas, num_output=1, num_hidden=3, output_type=output_type, iterations=50, step=0.1)
+ann = simple_back_propagation_ann(datas, num_output=2, num_hidden=3, output_type=output_type, iterations=50, step=0.1)
 results = [ (ann(x),t) for x,t in datas ]
 logging.info('results is: ')
 logging.info(results)
