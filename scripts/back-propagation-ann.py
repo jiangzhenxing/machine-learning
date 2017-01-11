@@ -85,7 +85,7 @@ def simple_back_propagation_ann(datas, num_output=3, num_hidden=5, output_type=L
     # 权重更新的方向
     # 如果输出结点是线性单元，取梯度向量相反的方向为误差下降最快方向
     # 如果输出单元是sigmoid单元，取梯度向量方向为目标值上升最快方向
-    update_direct = 1 if output_type == S else -1
+    update_direct = 1 if output_type == SIGMOID else -1
 
     for i in range(iterations):
         step0 = step / (i * 2 + 1)
