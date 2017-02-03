@@ -86,9 +86,10 @@ def simple_back_propagation_ann(datas, num_output=3, num_hidden=5, output_type=L
     # 如果输出结点是线性单元，取梯度向量相反的方向为误差下降最快方向
     # 如果输出单元是sigmoid单元，取梯度向量方向为目标值上升最快方向
     update_direct = 1 if output_type == SIGMOID else -1
-
+    step_delta = step / (iterations + 1)
     for i in range(iterations):
-        step0 = step / (i * 2 + 1)
+        #step0 = step / (i + 1)
+        step = step - step_delta
         for x,t in datas:
             x = extend(x)
             logging.debug('x is: ' + str(x) + ', t is: ' + str(t))
@@ -120,8 +121,8 @@ def simple_back_propagation_ann(datas, num_output=3, num_hidden=5, output_type=L
             # 更新权值向量
             # LMS误差度量方式时，方向取梯度向量的反方向即误差下降最快方向
             # 输出单元为sigmoid单元时，方向取梯度向量方向即可，为目标上升最快方向
-            foreach(Node.update_weight, outputs, update_direct * step0 * np.array(gradient_outputs))
-            foreach(Node.update_weight, hiddens, update_direct * step0 * np.array(gradient_hiddens))
+            foreach(Node.update_weight, outputs, update_direct * step * np.array(gradient_outputs))
+            foreach(Node.update_weight, hiddens, update_direct * step * np.array(gradient_hiddens))
 
             '''
             for gradient, node in zip(gradient_outputs, outputs):
@@ -131,7 +132,7 @@ def simple_back_propagation_ann(datas, num_output=3, num_hidden=5, output_type=L
                 node.update_weight(step0 * -gradient)
             '''
 
-        logging.info('step is: ' + str(step0))
+        logging.info('step is: ' + str(step))
         logging.info('out weight is: ' + str([ node.weight for node in outputs ]))
         logging.info('hidden weight is: ' + str([ node.weight for node in hiddens ]))
         logging.info('=' * 100)
@@ -167,7 +168,7 @@ def scatter_datas(datas, c1=1, c2=-1):
         plt.scatter(*list(zip(*data2)), s=25, c='r', alpha=0.5)
 
 
-output_type = LINEAR
+output_type = SIGMOID # LINEAR
 output_type = SIGMOID
 c1 = 1
 c2 = 0 if output_type == SIGMOID else -1
@@ -181,9 +182,15 @@ datas2 = [ ([x,y],c1) if x>y else ([x,y],c2) for x in range(10) for y in range(1
 datas2.extend([([9,8],c2), ([8,9],c1), ([8,7],c1), ([7,8],c2), ([7,6],c2), ([6,7],c1), ([6,5],c1), ([5,6],c2), \
                ([5,4],c2), ([4,5],c1), ([4,3],c1), ([3,4],c2), ([3,2],c2), ([2,3],c1), ([2,1],c1), ([1,2],c2), \
                ([1,0],c2), ([0,1],c1), ])
+# 一个以半径为8的1/4圆弧为分界的数据集
+datas3 = [ ([x,y],c1) if x ** 2 + y ** 2 < 64 else ([x,y],c2) for x in range(10) for y in range(10) ]
 
 datas = np.array(datas2)                    # 选择数据集
-ann = simple_back_propagation_ann(datas, num_output=2, num_hidden=3, output_type=output_type, iterations=50, step=0.1)
+# scatter_datas(datas, c1, c2)
+
+# 完全拟合data3数据集
+# ann = simple_back_propagation_ann(datas, num_output=2, num_hidden=15, output_type=output_type, iterations=200, step=0.3)
+ann = simple_back_propagation_ann(datas, num_output=1, num_hidden=35, output_type=output_type, iterations=200, step=0.5)
 results = [ (ann(x),t) for x,t in datas ]
 logging.info('results is: ')
 logging.info(results)
@@ -203,6 +210,6 @@ logging.info('error rate is: ' + str(error_rate))
 # 误分类的数据
 error_classify_datas = datas[[ i for i,(c,t) in enumerate(classifys) if c != t ]]
 scatter_datas(error_classify_datas, c1, c2)
-# scatter_datas(datas)
+
 plt.show()
 
