@@ -16,3 +16,7 @@ def scatter_datas(plt, datas, c1=1, c2=-1):
 
     if len(data2) > 0:
         plt.scatter(*zip(*data2), s=25, c='r', alpha=0.5)
+
+def debug():
+    command = input('enter to continue, q to quit: ')
+    if command == 'q': exit()
