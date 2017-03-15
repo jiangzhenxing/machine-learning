@@ -20,3 +20,26 @@ def scatter_datas(plt, datas, c1=1, c2=-1):
 def debug():
     command = input('enter to continue, q to quit: ')
     if command == 'q': exit()
+
+def pgm_read(filepath):
+    '''
+    pgm格式的图片读取
+    '''
+    f = open(filepath, 'rb')
+    try:
+        pgm_type = f.readline().decode().strip()
+        if pgm_type != 'P5' and pgm_type != 'P2':
+            raise RuntimeError('不支持的格式')
+        size = f.readline().decode().strip()
+        gray = int(f.readline().decode().strip())
+        data = f.read()
+        data = list(data) if pgm_type == 'P5' else list(map(int, data.decode().split()))
+
+        if gray < 1 << 8:
+            return data
+        elif gray < 1 << 16:
+            return list(map(lambda i: (data[i*2] << 8) | data[i*2+1], range(1, len(data) / 2)))
+        else:
+            raise RuntimeError('不支持的灰度值：' + str(gray))
+    finally:
+        f.close()
