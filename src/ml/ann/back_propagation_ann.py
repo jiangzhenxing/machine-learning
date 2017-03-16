@@ -3,23 +3,17 @@ import matplotlib.pyplot as plt
 import logging
 
 from functools import reduce
-from operator import add
-from operator import mul
-from ml.util import foreach
+from operator import add, mul
+from ml.util import foreach, extend, model, logistic, debug
+from . import SIGMOID, LINEAR
+
 '''
 使用反向传播算法训练前馈神经网络
 '''
 
 e = np.e
 ln = np.log
-extend = lambda x: np.array([1] + x)        # 扩展样本数据，增加常数项
-model = lambda x: np.sqrt(x.dot(x))         # 向量模长
-logistic = lambda x: 1 / (1 + e ** -x)      # 逻辑函数
 classify = lambda score, threshold, c1, c2: c1 if score >= threshold else c2    # 分类函数
-SIGMOID = 'sigmoid'
-LINEAR = 'linear'
-S = SIGMOID
-L = LINEAR
 
 class Node:
     '''
@@ -78,7 +72,7 @@ def simple_back_propagation_ann(datas, num_output=1, num_hidden=5, output_type=L
     outputs = [ Node(weight=np.random.rand(num_hidden + 1), index=i, tp=output_type) for i in range(num_output) ]
     # 隐藏结点
     hidden_type = SIGMOID
-    hiddens = [ Node(weight=np.random.rand(len(datas[0]) + 1), index=i, tp=hidden_type) for i in range(num_hidden) ]
+    hiddens = [ Node(weight=np.random.rand(len(datas[0][0]) + 1), index=i, tp=hidden_type) for i in range(num_hidden) ]
 
     # 权重更新的方向
     # 如果输出结点是线性单元，取梯度向量相反的方向为误差下降最快方向
@@ -133,6 +127,8 @@ def simple_back_propagation_ann(datas, num_output=1, num_hidden=5, output_type=L
             for gradient, node in zip(gradient_hiddens, hiddens):
                 node.update_weight(step0 * -gradient)
             '''
+            if logging.root.isEnabledFor(logging.DEBUG):
+                debug()
 
         logging.info('step is: ' + str(step))
         logging.info('out weight is: ' + str([ node.weight for node in outputs ]))

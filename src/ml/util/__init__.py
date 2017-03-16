@@ -1,3 +1,8 @@
+import numpy as np
+
+extend = lambda x: np.array([1] + x)    # 扩展样本数据，增加常数项，并转为numpy数组
+model = lambda x: np.sqrt(x.dot(x))     # 向量模长
+logistic = lambda x: 1 / (1 + np.e ** -x)  # 逻辑函数
 
 def foreach(function, *iterators):
     '''使用function迭代执行参数'''
