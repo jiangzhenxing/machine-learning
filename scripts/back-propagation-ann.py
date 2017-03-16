@@ -2,22 +2,16 @@
 import numpy as np
 import matplotlib.pyplot as plt 
 import logging
-import ml.ann.back_propagation_ann as bnn
 
 from functools import reduce
-from operator import add
-from operator import mul
-from ml.ann.back_propagation_ann import simple_back_propagation_ann
-from ml.util import scatter_datas
+from operator import add, mul
+from ml.ann import simple_back_propagation_ann, SIGMOID, LINEAR
+from ml.util import scatter_datas, extend
 
 '''
 使用反向传播算法训练前馈神经网络
 '''
-
-extend = bnn.extend        # 扩展样本数据，增加常数项
 classify = lambda x, threshold, c1, c2: c1 if x >= threshold else c2    # 分类函数
-SIGMOID = bnn.SIGMOID
-LINEAR = bnn.LINEAR
 
 logging.basicConfig(level=logging.INFO, 
                     format='[%(asctime)s line:%(lineno)d %(levelname)s] %(message)s',

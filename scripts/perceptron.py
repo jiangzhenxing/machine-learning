@@ -2,8 +2,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from functools import reduce
-from ml.ann.perceptron import perceptron_rule,extend
-from ml.util import scatter_datas
+from ml.ann import perceptron_rule
+from ml.util import scatter_datas, extend
 
 '''
 训练一个线性函数对数据集进行划分
