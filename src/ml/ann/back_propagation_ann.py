@@ -58,7 +58,7 @@ class Node:
     def update_weight(self, delta):
         self.weight += delta
 
-def simple_back_propagation_ann(datas, num_output=1, num_hidden=5, output_type=LINEAR, iterations=100, step=1, step_out=1):
+def simple_back_propagation_ann(datas, num_output=1, num_hidden=5, output_type=SIGMOID, iterations=100, step=1, step_out=1):
     '''
     一个使用反向传播算法训练的简单的三层前馈神经网络
     包含一个输出层，一个隐藏层和一个输入层
