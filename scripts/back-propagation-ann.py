@@ -9,19 +9,18 @@ from ml.ann import simple_back_propagation_ann, SIGMOID, LINEAR
 from ml.util import scatter_datas, extend
 
 '''
-使用反向传播算法训练前馈神经网络
+使用反向传播算法训练前馈神经网络来对数据集进行分类
 '''
-classify = lambda x, threshold, c1, c2: c1 if x >= threshold else c2    # 分类函数
-
 logging.basicConfig(level=logging.INFO, 
                     format='[%(asctime)s line:%(lineno)d %(levelname)s] %(message)s',
                     datefmt='%H:%M:%S')
-
 output_type = LINEAR
-# output_type = SIGMOID
-c1 = 1
+output_type = SIGMOID   # 输出节点的类型
+# 类别值，线性输出节点为(-1,1), SIGMOID输入节点为(0,1)
+c1 = 0.9 if output_type == SIGMOID else 1
 c2 = 0 if output_type == SIGMOID else -1
 threshold = 0 if output_type == LINEAR else 0.5
+classify = lambda x, threshold, c1, c2: c1 if x >= threshold else c2    # 分类函数
 
 t1 = [c1]
 t2 = [c2]
@@ -36,11 +35,13 @@ datas2.extend([([9,8],t2), ([8,9],t1), ([8,7],t1), ([7,8],t2), ([7,6],t2), ([6,7
 # 一个以半径为8的1/4圆弧为分界的数据集
 datas3 = [ ([x,y],t1) if x ** 2 + y ** 2 < 64 else ([x,y],t2) for x in range(10) for y in range(10) ]
 
-datas = np.array(datas2)                    # 选择数据集
-# scatter_datas(plt, datas, c1, c2)
+datas = np.array(datas2)                # 选择数据集
+#scatter_datas(plt, datas, t1, t2)      # 展示数据
+#plt.show()
 
-# ann = simple_back_propagation_ann(datas, num_output=1, num_hidden=15, output_type=output_type, iterations=200, step=0.3)
-ann = simple_back_propagation_ann(datas, num_output=1, num_hidden=15, output_type=output_type, iterations=100, step=0.5)
+# 以下参数可完全拟合数据集3
+#ann = simple_back_propagation_ann(datas, num_output=1, num_hidden=15, output_type=SIGMOID, iterations=100, step=0.5)
+ann = simple_back_propagation_ann(datas, num_output=1, num_hidden=15, output_type=output_type, iterations=200, step=0.5)
 results = [ (ann(x),t) for x,t in datas ]
 logging.info('results is: ')
 logging.info(results)
