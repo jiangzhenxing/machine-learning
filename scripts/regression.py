@@ -29,13 +29,18 @@ datas2.extend([([9,8],-1), ([8,9],1), ([8,7],1), ([7,8],-1), ([7,6],-1), ([6,7],
 # 一个以y=x分隔的不对称点集
 datas3 = [([1,10],1), ([5,6],1), ([1,3],1), ([2,5],1), ([3,10],1), ([2,1],-1), ([4,2],-1), ([6,5],-1), ([8,4],-1)]
 
-datas = datas3                  # 在这里选择使用的数据集
-w = perceptron_rule(datas)      # 这个方法要求使用线性可分的数据集
+cost1 = 'LOGISTIC'
+cost2 = 'LMS'
 
+datas = datas3          # 在这里选择使用的数据集
+cost = cost1            # 选择损失函数
+
+w = grad_descent_regression(datas, iteration=100, step=0.1, cost=cost) 
+#w = stoch_grad_descent_regression(datas, step=0.02, iteration=100, initw=0, cost='LMS')
 scatter_datas(plt, datas)
 print('w is: ' + str(w))
 
-# 绘制分界面的直线
+# 绘制线性回归的直线
 x = np.linspace(0, 10)
 y = -(w[0] + w[1] * x) / w[2]
 
@@ -49,5 +54,15 @@ error_rate = sum([ 1 if classify(o) != t else 0 for o,t in result ]) / len(resul
 print('error is: ' + str(error))
 print('error rate is: ' + str(error_rate))
 
+'''
+# 绘制逻辑回归数据点
+x = [ w.dot(extend(d[0])) for d in datas ]
+y = list(map(logistic, x))
+print('x is: \n' + str(x))
+print('y is: \n' + str(y))
+plt.scatter(x, y, s=10, c='r', alpha=0.5)
+'''
+
 plt.show()
+
 

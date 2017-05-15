@@ -58,5 +58,6 @@ for u in test_user1:
 for u in test_user2:
     test_data2  += read_user_data(u)
 
+# 准确率接近90%
 test(test_data1)
 test(test_data2)
