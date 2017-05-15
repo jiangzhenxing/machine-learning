@@ -68,7 +68,7 @@ def stoch_grad_descent_regression(datas, iteration=100, step=1, initw=0, cost='L
     '''
     随机梯度下降与梯度下降相似，
     只是对数据集中的每个样本xi，梯度向量的方向取(ti-wxi)xi，然后根据此梯度向量的方向更新w，不需要根据整个数据集样本的误差计算梯度向量
-    这相当于为每个样本定义一个误差函数：cost = (ti - ti) ** 2 = (ti - wxi) ** 2 和梯度向量(ti - wxi)xi
+    这相当于为每个样本定义一个误差函数：cost = (ti - oi) ** 2 = (ti - wxi) ** 2 和梯度向量(ti - wxi)xi
     逻辑回归中目标函数为：-tiln(1 + e ** -wxi) - (1 - ti)ln(1 + e ** wxi)
     梯度向量为：(ti / (1 + e ** wxi) - (1 - ti) / (1 + e ** -wxi))xi
     '''
