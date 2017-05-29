@@ -1,0 +1,47 @@
+#!usr/bin/env python3
+import numpy as np
+from  ml.dl import rbm
+
+'''
+使用手写数字图片数据对RBM进行测试
+'''
+def img2vector(filename):
+    '''
+    读取图片
+    '''
+    img = [] 
+    for line in open(filename):
+        img.extend([int(c) for c in line.strip()])
+    return np.array(img)
+
+def printImg(imgvector):
+    '''
+    打印图片，为使图片看起来方正一些，对所有数据都打印了两次
+    '''
+    for n in range(32):
+        print(''.join([ str(int(n))*2 for n in imgvector[n * 32: n * 32 + 32] ]))
+
+# 按结果概率进行还原
+classify = lambda v: [1 if x >= 0.5 else 0 for x in v]
+
+img = img2vector('data/digits/1_1.txt')
+print('原始图像：')
+printImg(img)
+
+rbm_out = rbm.cd_train(img, hiddens=16)     # 隐藏结点数量不够多，还原效果不好
+
+img2 = img2vector('data/digits/4_1.txt')
+# img2 = np.round(np.random.rand(1024))     # 随机数据不能还原原始图像
+print('图像2：')
+printImg(img2)
+
+result = classify(rbm_out(img2))
+print('rbm还原结果：')
+printImg(result)
+
+print('### w: ###')
+print(rbm_out.w)
+print('### a: ###')
+print(rbm_out.a)
+print('### b: ###')
+print(rbm_out.b)
