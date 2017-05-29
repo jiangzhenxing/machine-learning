@@ -30,12 +30,17 @@ printImg(img)
 
 rbm_out = rbm.cd_train(img, hiddens=16)     # 隐藏结点数量不够多，还原效果不好
 
-img2 = img2vector('data/digits/4_1.txt')
-# img2 = np.round(np.random.rand(1024))     # 随机数据不能还原原始图像
+img2 = img2vector('data/digits/2_1.txt')
+#img2 = np.round(np.random.rand(1024))     # 随机数据不能还原原始图像
+#img2 = list(np.round(np.random.rand(32))) * 32
 print('图像2：')
 printImg(img2)
 
-result = classify(rbm_out(img2))
+n = 1
+for i in range(n):
+    img2 = rbm_out(img2)
+
+result = classify(img2)
 print('rbm还原结果：')
 printImg(result)
 
