@@ -1,4 +1,4 @@
-#!usr/bin/env python3
+#!/usr/bin/env python3
 import numpy as np
 from  ml.dl import rbm
 
@@ -24,29 +24,30 @@ def printImg(imgvector):
 # 按结果概率进行还原
 classify = lambda v: [1 if x >= 0.5 else 0 for x in v]
 
-img = img2vector('data/digits/1_1.txt')
-print('原始图像：')
+img = img2vector('data/digits/2_1.txt')
+print('训练图像：')
 printImg(img)
 
-rbm_out = rbm.cd_train(img, hiddens=16)     # 隐藏结点数量不够多，还原效果不好
+rbm_out = rbm.cd_train(img, iterations=200, hiddens=64)     # 隐藏结点数量不够多，还原效果不好
 
-img2 = img2vector('data/digits/2_1.txt')
+img2 = img2vector('data/digits/2_2.txt')
 #img2 = np.round(np.random.rand(1024))     # 随机数据不能还原原始图像
 #img2 = list(np.round(np.random.rand(32))) * 32
-print('图像2：')
+print('测试图像：')
 printImg(img2)
 
 n = 1
 for i in range(n):
     img2 = rbm_out(img2)
+    result = classify(img2)
+    print('rbm还原结果：' + str(i + 1))
+    printImg(result)
 
-result = classify(img2)
-print('rbm还原结果：')
-printImg(result)
-
+'''
 print('### w: ###')
 print(rbm_out.w)
 print('### a: ###')
 print(rbm_out.a)
 print('### b: ###')
 print(rbm_out.b)
+'''

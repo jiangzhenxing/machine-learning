@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from functools import reduce
 from ml.ann import perceptron_rule, grad_descent_regression, stoch_grad_descent_regression
 from ml.util import scatter_datas, extend
+from sklearn import svm
 
 '''
 训练一个线性函数对数据集进行划分
@@ -27,25 +28,64 @@ datas2.extend([([9,8],-1), ([8,9],1), ([8,7],1), ([7,8],-1), ([7,6],-1), ([6,7],
                ([5,4],-1), ([4,5],1), ([4,3],1), ([3,4],-1), ([3,2],-1), ([2,3],1), ([2,1],1), ([1,2],-1), \
                ([1,0],-1), ([0,1],1), ])
 # 一个以y=x分隔的不对称点集
-datas3 = [([1,10],1), ([5,6],1), ([1,3],1), ([2,5],1), ([3,10],1), ([2,1],-1), ([4,2],-1), ([6,5],-1), ([8,4],-1)]
-
-cost1 = 'LOGISTIC'
-cost2 = 'LMS'
+datas3 = [([1,10],1), 
+          ([5,6],1), 
+          ([1,3],1), ([2,5],1), 
+          ([3,10],1), 
+          ([2,1],-1), 
+          ([4,2],-1), 
+          ([6,5],-1), 
+          ([8,4],-1), ([8,5],-1),
+         ]
+LGST = 'LOGISTIC'
+LMS = 'LMS'
 
 datas = datas3          # 在这里选择使用的数据集
-cost = cost1            # 选择损失函数
+cost = LGST            # 选择损失函数
+dataslr = [(d,(l+1)/2) for d,l in datas] # 类型转化为0/1
+print(dataslr)
+w = grad_descent_regression(dataslr, iteration=200, step=0.1, cost=LGST)
+w2 = stoch_grad_descent_regression(datas, iteration=200, step=0.01, cost=LMS, verbose=1)
 
-w = grad_descent_regression(datas, iteration=100, step=0.1, cost=cost) 
+data = [d for d,l in datas]
+label = [l for d,l in datas]
+svc = svm.SVC(kernel='linear', max_iter=200)
+svc.fit(data, label)
+print('support_vectors:', svc.support_vectors_)
+p = [[i,i*2] for i in range(1,9,1)]
+d = svc.decision_function(p)
+b = [(x,y-h) for (x,y),h in zip(p,d)]
+line, = plt.plot(*zip(*b), 'm--', linewidth=1)
+line.set_dashes([1,0])
+
 #w = stoch_grad_descent_regression(datas, step=0.02, iteration=100, initw=0, cost='LMS')
 scatter_datas(plt, datas)
 print('w is: ' + str(w))
+print('w2 is:', w2)
 
 # 绘制线性回归的直线
-x = np.linspace(0, 10)
+x = np.linspace(1, 8)
 y = -(w[0] + w[1] * x) / w[2]
 
-line, = plt.plot(x, y, '--', linewidth=1)
+line, = plt.plot(x, y, 'b--', linewidth=1)
 line.set_dashes([1,0])
+
+x2 = np.linspace(1, 7)
+y2 = -(w2[0] + w2[1] * x2) / w2[2]
+# w1x + w2y + w0 = 1
+# y = -(w1x + w0 - 1)/w2
+x3 = np.linspace(0, 4)
+y3 = -(w2[0] + w2[1] * x3 - 1) / w2[2]
+x4 = np.linspace(5, 9)
+y4 = -(w2[0] + w2[1] * x4 + 1) / w2[2]
+
+line, = plt.plot(x2, y2, 'c--', linewidth=1)
+line.set_dashes([1,0])
+
+line, = plt.plot(x3, y3, 'c--', linewidth=1)
+line, = plt.plot(x4, y4, 'c--', linewidth=1)
+
+#line.set_dashes([1,0])
 
 # 计算误差和错误率
 result = [ (w.dot(extend(x)),t) for x,t in datas ]
