@@ -7,6 +7,7 @@ import threading
 
 from tkinter import ttk
 
+
 class Value:
     def __init__(self, value=None):
         self.value = value
@@ -40,8 +41,7 @@ class Maze:
         canvas.pack()
 
         # 绘制格子
-        grid = [[canvas.create_rectangle(j * w, i * w, j * w + w, i * w + w, fill='#EEEEEE')
-                      for j in range(5)] for i in range(5)]
+        grid = [[canvas.create_rectangle(j * w, i * w, j * w + w, i * w + w, fill='#EEEEEE') for j in range(5)] for i in range(5)]
 
         # 两个陷井(2,1)和(1,3)
         canvas.create_rectangle(w, 2 * w, 2 * w, 3 * w, fill='red')
@@ -56,22 +56,15 @@ class Maze:
         canvas.create_oval(3 * w + 5, 3 * w + 5, 4 * w - 5, 4 * w - 5, outline='#FF83FA', width=2)
 
         # 表示当前状态
-        rec = canvas.create_rectangle(0, 0, w, w, fill='#FFFF00')
+        rec = canvas.create_rectangle(0, 0, w, w, fill='#FFFF00', state=tk.HIDDEN)
 
         # 显示状态的价值
-        values = [[canvas.create_text(j * w + 25, i * w + 25,
-                            text='0' if (i, j) not in self.terminals else '',fill='blue')
-                            for j in range(5)]
-                            for i in range(5)]
+        # 5x5列表，坐标与状态相对应，每个元素为显示价值的文本，终止态的价值不显示
+        values = [[canvas.create_text(j * w + 25, i * w + 25, text='0' if (i, j) not in self.terminals else '',fill='blue') for j in range(5)] for i in range(5)]
 
         # 显示q值的文本组件
-        qtext = [[{a:canvas.create_text(
-                    j * w if a == 'LEFT' else (j * w + w if a == 'RIGHT' else j * w + 25),
-                    i * w if a == 'UP' else (i * w + w if a == 'DOWN' else i * w + 25),
-                    text='0', fill='#A020F0', state=tk.HIDDEN)
-                    for a in self.state_actions((i,j))}
-                    for j in range(5)]
-                    for i in range(5)]
+        # 5x5列表，坐标与状态相对应，每个元素为action:text的dict，并根据action对文本的位置进行调整
+        qtext = [[{a: canvas.create_text(j * w if a == 'LEFT' else (j * w + w if a == 'RIGHT' else j * w + 25), i * w if a == 'UP' else (i * w + w if a == 'DOWN' else i * w + 25), text='', fill='#A020F0', state=tk.HIDDEN) for a in self.state_actions((i,j))} for j in range(5)] for i in range(5)]
 
         # 显示鼠标所指的状态的Q值
         canvas.bind('<Motion>', func=lambda e: self.show_q(self.position_to_state(e.x, e.y)))
@@ -79,7 +72,7 @@ class Maze:
         # 鼠标离开时隐藏正在显示的状态的Q值
         canvas.bind('<Leave>', func=lambda e: self.hide_q())
 
-        # 单击左键绘制路径
+        # 单击左键绘制路径，再次单击清除路径
         canvas.bind('<Button-1>', func=lambda e: self.draw_path(self.position_to_state(e.x, e.y)))
 
         # 速度调节按扭
@@ -92,11 +85,11 @@ class Maze:
 
         # 学习方法选择
         learning_method = tk.StringVar()
-        methods = ('QLearning-MC', 'TDLearning', '3STEP-TD', 'SARSA') # 下拉列表的值
+        methods = ('Dydamic Programming', 'QLearning', 'SARSA', 'MonteCarlo', '3STEP-TD') # 下拉列表的值
         method_choosen = ttk.Combobox(window, width=12, textvariable=learning_method, values=methods, state='readonly')
         method_choosen.current(0)
         method_choosen.place(x=10, y=300)
-        method_choosen.bind('<<ComboboxSelected>>', lambda e:method_choosen.selection_clear())
+        method_choosen.bind('<<ComboboxSelected>>', self.mothod_selected)
 
         # 开始按扭
         start_text = tk.StringVar(value='start')
@@ -130,11 +123,20 @@ class Maze:
         self.closed = Value(False)
         self.started = Value(False)
         self.learning_method = learning_method
+        self.method_choosen = method_choosen
         self.qtext = qtext
         self.qtext_showing = None
         self.path_lines = []
         self.path_state = None
         self.rl = None
+
+    def mothod_selected(self, event):
+        self.method_choosen.selection_clear()
+        method = self.learning_method.get()
+        if method == 'Dydamic Programming' and not self.started:
+            self.canvas.itemconfig(self.rec, {'state':tk.HIDDEN})
+        else:
+            self.canvas.itemconfig(self.rec, {'state':tk.NORMAL})
 
     def position_to_state(self, x, y):
         i = int(y / self.w)
@@ -195,8 +197,13 @@ class Maze:
             self.started(True)
             self.event.set()
             method = self.learning_method.get()
-            if method == 'QLearning-MC':
-                self.rl = MCQLearning(self)
+            if method == 'Dydamic Programming':
+                self.canvas.itemconfig(self.rec, {'state':tk.HIDDEN})
+                self.rl = DP(self)
+            elif method == 'MonteCarlo':
+                self.rl = MonteCarlo(self)
+            elif method == 'QLearning':
+                self.rl = QLearning(self)
             elif method == 'TDLearning':
                 self.rl = TDLearning(self)
             elif method == '3STEP-TD':
@@ -206,19 +213,26 @@ class Maze:
             self.rl.start()
             self.start_text.set('stop')
         elif self.start_text.get() == 'stop':
-            self.started(False)
-            self.event.set()
-            self.start_text.set('start')
+            self.stop()
+
+    def stop(self):
+        self.started(False)
+        self.event.set()
+        self.start_text.set('start')
 
     def reset(self):
         for i in range(5):
             for j in range(5):
                 self.canvas.itemconfig(self.values[i][j], {'text':'0' if (i,j) not in self.terminals else ''})
                 self.canvas.itemconfig(self.grid[i][j], {'fill':'#EEEEEE'})
+                for qtext in self.qtext[i][j].values():
+                    self.canvas.itemconfig(qtext, {'text':'', 'fill':'#A020F0', 'state':tk.HIDDEN})
         self.move_to((0,0))
         self.pause_text.set('pause')
         self.print_step(0)
         self.print_episode(0)
+        self.delete_path()
+
 
     def print_episode(self, episode):
         self.episode_text.set('episode: ' + str(episode))
@@ -236,8 +250,8 @@ class Maze:
             for a in qtable.index:
                 q = qtable[a]
                 self.canvas.itemconfig(qtext[a],
-                    {'text': str(round(qtable[a],2))[1:] if 0 < q < 1 else str(int(q)),
-                    'fill': '#FF00FF' if q == maxq and q > 0 else '#A020F0'})
+                    {'text': str(round(qtable[a],2)).replace('0.', '.') if 0 < np.abs(q) < 1 else str(int(q)),
+                    'fill': '#FF00FF' if q == maxq and q > 0 else ('#CD3278' if q < 0 else '#A020F0')})
 
     def show_q(self, state):
         """
@@ -277,17 +291,19 @@ class Maze:
         return actions
 
     def draw_path(self, state):
+        """
+        绘制或清除路径
+        """
         if self.rl is None:
             return
 
         if state == self.path_state:
             self.delete_path()
-            self.path_state = None
             return
 
+        self.delete_path()
         path = self.rl.best_path(state)
         # print(path)
-        self.delete_path()
 
         for begin, end in zip(path[:-1], path[1:]):
             self.path_lines.append(self.canvas.create_line(*self.state_position(begin), *self.state_position(end), fill='#FFD39B', width=2))
@@ -297,12 +313,17 @@ class Maze:
     def delete_path(self):
         for line in self.path_lines:
             self.canvas.delete(line)
+        self.path_state = None
 
     @staticmethod
     def color(value):
+        if value > 1:
+            value = 1 - value / 9
         c = int(255 * (1 - value) * 1.5)
         if c > 255:
             c = 255
+        if c < 0:
+            c = 0
         c = '%02x' % c
         rgb = '#' + c + 'ff' + c
         return rgb
@@ -380,23 +401,17 @@ class RL:
     value = maxQ
 
     def update_q(self, state, action, q):
-        qtable = self.state_qtable(state)
-        q_eval = qtable[action]
-
-        # q_eval = q_eval + self.alpha * (q - q_eval)
-
+        q_eval = self.q(state, action)
         # 取平均值
         ntable = self.state_ntable(state)
         ntable[action] += 1
         alpha = 1 / ntable[action]
         q_eval = (1 - alpha) * q_eval + alpha * q
         # q_eval = q_eval + alpha * (q - q_eval)    # 与上式等价
-
         self._update_q(state, action, q_eval)
 
     def _update_q(self, state, action, q):
         self.state_qtable(state)[action] = q
-
 
     def e_greedy(self):
         """
@@ -446,8 +461,9 @@ class RL:
         try:
             self._learning()
             self.move_to((0,0))
+            self.maze.stop()
         except Exception as e:
-            self.maze.started(False)
+            self.maze.stop()
             raise e
         finally:
             if self.closed():
@@ -455,21 +471,18 @@ class RL:
         print('... Learning Ended ...')
 
     def _learning(self):
-        pass
+        raise NotImplementedError
 
     def best_path(self, state, maxlen=10):
         """
         获取某个状态的最优路径，路径最长maxlen个
         """
         path = [state]
-        while len(path) <= maxlen and path[-1] not in self.terminals:
+        while path[-1] not in self.terminals:
             next_state = self.next_state(self.pi_star(state), state)
-            if next_state in path:
-                break
             path.append(next_state)
             state = next_state
         return path
-
 
     def print_updates(self, updates):
         update_values = [(state, self.maxq(state)) for state in updates]
@@ -507,10 +520,111 @@ class RL:
         threading.Thread(target=self.learning).start()
 
 
-class MCQLearning(RL):
+class DP(RL):
+    def __init__(self, maze):
+        RL.__init__(self, maze)
+        # 每个状态保存到目标的最短距离和相应路径
+        path = [[(999, '') for j in range(5)] for i in range(5)]
+        i, j = self.goal[0]
+        path[i][j] = (0, 'END') # 目标状态的距离和路径
+        self.path = path
+
+    def _state_q_init(self, state):
+        actions = self.maze.state_actions(state)
+        return pd.Series(data=[''] * len(actions), index=actions)
+
+    def distance(self, state1, state2):
+        """
+        两个相邻state之间的距离
+        如果其中有一个是陷井，距离设为一个很大的值，其它相邻状态间的距离均为1
+        """
+        assert np.abs(np.subtract(state1,state2).sum()) == 1, 'states are not neighbors'
+
+        if state1 in self.traps or state2 in self.traps:
+            return 99999
+        else:
+            return 1
+
+    def neighbors(self, state):
+        """
+        取一个状态的邻近状态
+        """
+        return [self.next_state(a, state) for a in self.maze.state_actions(state)]
+
+    @staticmethod
+    def neighbor_action(state1, state2):
+        """
+        从state1到state2需要采取什么动作
+        """
+        disi, disj = np.subtract(state1, state2)
+        if disi == -1:
+            return 'DOWN'
+        elif disi == 1:
+            return 'UP'
+        elif disj == 1:
+            return 'LEFT'
+        elif disj == -1:
+            return 'RIGHT'
+        else:
+            raise Exception('state1 state2 are not neighbors!')
+
+    def state_path(self, state):
+        i,j = state
+        return self.path[i][j][1]
+
+    def state_dist(self, state):
+        i, j = state
+        return self.path[i][j][0]
+
+    def update_path(self, state, dist, path):
+        i,j = state
+        self.path[i][j] = (dist, path)
+
+    def print_updates(self, updates):
+        update_values = [(state, self.state_dist(state)) for state in updates]
+        self.maze.print_value(update_values)
+
+    def best_path(self, state, maxlen=10):
+        """
+        获取某个状态的最优路径，路径最长maxlen个
+        """
+        path = [state]
+        while self.state_path(state) != '' and state not in self.terminals:
+            state = self.next_state(self.state_path(state), state)
+            path.append(state)
+        return path
+
+    def _learning(self):
+        to_eval = self.goal.copy()  # 待评估状态
+        while len(to_eval) > 0:
+            state = to_eval.pop(0)
+            dist0 = self.state_dist(state)
+            neighbors = self.neighbors(state)
+            # print('eval:', state, neighbors)
+            for neighbor in neighbors:
+                dist = self.distance(neighbor, state) + dist0
+                if dist < self.state_dist(neighbor):
+                    self.update_path(neighbor, dist, self.neighbor_action(neighbor, state))
+                    self.print_updates([neighbor])
+                    to_eval.append(neighbor)
+                    self.wait_period()
+        # self.print_path()
+
+    def print_path(self):
+        for p in self.path:
+            print(p)
+
+
+class QLearning(RL):
     """
-    使用Monte-Carlo方法训练的QLearning
+    倒序更新的QLearning
     """
+    def update_q(self, state, action, q):
+        q_eval = self.q(state, action)
+        q_eval = q_eval + self.alpha * (q - q_eval)
+        # q_eval = q_eval + alpha * (q - q_eval)    # 与上式等价
+        self._update_q(state, action, q_eval)
+
     def _learning(self):
         while self.started():
             traces = self.simulate()
@@ -520,6 +634,41 @@ class MCQLearning(RL):
             updates = []
             for state, action, reward, next_state in traces:
                 q = reward + self.gamma * self.maxq(next_state)
+                self.update_q(state, action, q)
+                updates.append(state)
+                # print(state, action, q)
+            self.print_updates(updates)
+            self.print_qtable()
+            self.update_episode()
+            # self.maze.clear_message()
+
+    def simulate(self):
+        traces = []     # [(state,action,reward,next_state), ... ]
+        while self.started() and self.state not in self.terminals:
+            self.maze.event.wait()
+            traces.append((self.state, *self.move()))
+            # self.maze.print_message(', '.join(map(str, (traces[-1]))))
+            self.update_step()
+            self.wait_period()
+        self.wait_period(0.5)
+        self.random_init_state()
+        return traces
+
+
+class MonteCarlo(RL):
+    """
+    使用Monte-Carlo方法进行学习
+    """
+    def _learning(self):
+        while self.started():
+            traces = self.simulate()
+            if not self.started():
+                break
+            traces.reverse()
+            updates = []
+            q = 0
+            for state, action, reward, next_state in traces:
+                q = reward + self.gamma * q
                 self.update_q(state, action, q)
                 updates.append(state)
                 # print(state, action, q)
@@ -635,6 +784,9 @@ class TDLambda(RL):
 
 
 class SARSA(RL):
+    """
+    等同于TD(0)或1step TD
+    """
     def __init__(self, maze):
         RL.__init__(self, maze, alpha=0.1)
 
@@ -667,5 +819,5 @@ if __name__ == '__main__':
     # rl = TDLearning(maze=mz)
     # rl.start()
     tk.mainloop()
-
+    # DP(mz).learning()
     print('*********** ended ***********')
