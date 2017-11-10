@@ -19,7 +19,7 @@ from tkinter import ttk
 """
 
 class Maze:
-    def __init__(self, traps, goal, row=5, col=5, w=50, period=0.5, color_scale=1):
+    def __init__(self, traps, goal, row=5, col=5, w=50, period=0.5, color_scale=1, print_trace_flag=True):
         self.actions = ['LEFT', 'UP', 'RIGHT', 'DOWN'] # 动作
         self.traps = traps  # 陷井
         self.goal = goal    # 目标
@@ -29,7 +29,9 @@ class Maze:
         self.w = w
         self.period = Value(period)  # 移动间隔时间
         self.color_scale = color_scale
-        self.state = (0,0)  # 初使状态
+        self.state = (0,0)  # 初始状态
+        self.move_step = {'LEFT':(0, -1), 'UP':(-1, 0), 'RIGHT':(0, 1), 'DOWN':(1, 0)}
+        self.print_trace_flag = print_trace_flag
 
         # 创建主窗口
         window = tk.Tk()
@@ -45,7 +47,7 @@ class Maze:
         canvas.place(x=0, y=0)
 
         # 绘制格子
-        grid = [[canvas.create_rectangle(j * w, i * w, j * w + w, i * w + w, fill='#EEEEEE') for j in range(col)] for i in range(row)]
+        grid = [[self.create_rectangle(i, j, fill='#EEEEEE') for j in range(col)] for i in range(row)]
 
         # 两个陷井(2,1)和(1,3)
         for i,j in traps:
@@ -134,9 +136,10 @@ class Maze:
         self.path_lines = []
         self.path_state = None
         self.rl = None
+        self.traces = []
 
     def create_rectangle(self, i, j, **config):
-        self.canvas.create_rectangle(j * self.w, i * self.w, (j+1) * self.w, (i+1) * self.w, **config)
+        return self.canvas.create_rectangle(j * self.w, i * self.w, (j+1) * self.w, (i+1) * self.w, **config)
 
     def mothod_selected(self, event):
         self.method_choosen.selection_clear()
@@ -164,7 +167,6 @@ class Maze:
 
     def change_period(self, scale):
         self.period(self.period() * scale)
-        print('period:', self.period())
 
     def pause(self):
         if self.pause_text.get() == 'pause':
@@ -179,6 +181,7 @@ class Maze:
         x1, y1 = j * self.w, i * self.w
         x2, y2 = x1 + self.w, y1 + self.w
         self.canvas.coords(self.rec, x1, y1, x2, y2)
+        self.state = state
 
     def print_value(self, values):
         for (i,j),v in values:
@@ -208,7 +211,7 @@ class Maze:
             method = self.learning_method.get()
             if method == 'Dydamic Programming':
                 self.canvas.itemconfig(self.rec, state=tk.HIDDEN)
-                self.rl = DP(self)
+                self.rl = DydamicProgramming(self)
             elif method == 'MonteCarlo':
                 self.rl = MonteCarlo(self)
             elif method == 'QLearning':
@@ -269,7 +272,7 @@ class Maze:
         显示状态的Q值
         """
         # print('show_q:', state)
-        if state == self.qtext_showing or self.rl is None or isinstance(self.rl, DP):
+        if state == self.qtext_showing or self.rl is None or isinstance(self.rl, DydamicProgramming):
             return
         # print('show_q:', state)
         self.hide_q()
@@ -318,10 +321,9 @@ class Maze:
 
         self.delete_path()
         path = self.rl.best_path(state)
-        # print(path)
 
         for begin, end in zip(path[:-1], path[1:]):
-            self.path_lines.append(self.canvas.create_line(*self.state_position(begin), *self.state_position(end), fill='#FFD39B', width=2))
+            self.path_lines.append(self.canvas.create_line(*self.state_position(begin), *self.state_position(end), fill='#FFC125', width=2))
 
         self.path_state = state
 
@@ -330,8 +332,32 @@ class Maze:
             self.canvas.delete(line)
         self.path_state = None
 
+    def next_state(self, action, state=None):
+        if state is None:
+            state = self.state
+        x,y = state
+        step_x, step_y = self.move_step[action]
+        return x + step_x, y + step_y
+
+    def neighbors(self, state):
+        """
+        取一个状态的邻近状态
+        """
+        return [self.next_state(a, state) for a in self.state_actions(state)]
+
+    def draw_trace(self, state, next_state):
+        if self.print_trace_flag:
+            self.traces.append(self.canvas.create_line(*self.state_position(state), self.state_position(next_state), fill='yellow', width=2))
+
+    def clear_trace(self):
+        if self.print_trace_flag:
+            for line in self.traces:
+                self.canvas.delete(line)
+
     def color(self, value):
-        if value > 1:
+        old_value = value
+        if value > 1.0:
+            print(value)
             value = 1 - value / self.rl.max_value
         if value >= 0:
             c = int(255 * (1 - np.abs(value)) * self.color_scale)
@@ -348,6 +374,8 @@ class Maze:
             c = '%02x' % c
             rgb = '#ff' + c + c
         # print(value, rgb)
+        if old_value != 0 and rgb == '#ffffff':
+            print(value)
         return rgb
 
 
@@ -372,6 +400,7 @@ class RL:
         self.updated = set()
         self.min_q_update_print = 1e-4    # 显示更新的最小增量(因显示更新比较耗时)
         self.max_value = 1
+        self.next_state = maze.next_state
 
     def _state_q_init(self, state):
         actions = self.maze.state_actions(state)
@@ -388,16 +417,11 @@ class RL:
         self.move_to(next_state)
         return reward, next_state
 
-    def move_to(self, next_state):
-        self.state = next_state
+    def move_to(self, next_state, draw_path=True):
         self.maze.move_to(next_state)
-
-    def next_state(self, action, state=None):
-        if state is None:
-            state = self.state
-        x,y = state
-        step_x, step_y = self.move_step[action]
-        return x + step_x, y + step_y
+        if draw_path:
+            self.maze.draw_trace(self.state, next_state)
+        self.state = next_state
 
     def reward(self, action, state=None):
         next_state = self.next_state(action, state)
@@ -490,27 +514,35 @@ class RL:
     def random_init_state(self):
         """
         随机初始化状态值
-        :return:
         """
-        while True:
-            s = self.states[np.random.randint(25)]
-            if s not in self.terminals:
-                self.move_to(s)
-                break
+        s = self.states[np.random.randint(len(self.states))]
+        if s not in self.terminals:
+            self.move_to(s, draw_path=False)
+        else:
+            self.random_init_state()
 
     def learning(self):
         try:
-            ending = False
-            while self.started() and not ending:
-                ending = self._learning()
+            while self.started() and not self._learning():
+                self.clear_trace()
+                if self.started():
+                    self.update_episode()
+                    self.wait_period(0.5)
+                    self.random_init_state()
+                    self.wait_period()
         finally:
-            self.move_to((0, 0))
+            self.clear_trace()
+            self.move_to((0, 0), draw_path=False)
             self.maze.stop()
             if self.closed():
                 self.maze.quit()
-        print('... Learning Ended ...')
+        print('... ' + self.__class__.__name__ + ' Ended ...')
 
     def _learning(self):
+        """
+        一个学习过程
+        :return: True终止学习
+        """
         raise NotImplementedError
 
     def best_path(self, state, maxlen=None):
@@ -546,6 +578,9 @@ class RL:
         self.step += 1
         self.maze.print_step(self.step)
 
+    def clear_trace(self):
+        self.maze.clear_trace()
+
     def wait_period(self, scale=1.0):
         if not self.closed():
             time.sleep(self.maze.period() * scale)
@@ -563,7 +598,7 @@ class RL:
         self.maze.event.wait()
 
 
-class DP(RL):
+class DydamicProgramming(RL):
     def __init__(self, maze):
         RL.__init__(self, maze)
         # 每个状态保存到目标的最短距离和相应路径
@@ -572,9 +607,9 @@ class DP(RL):
         path[i][j] = (0, 'END') # 目标状态的距离和路径
         self.path = path
         maze.color_scale = 1
-        # 最大距离为四个角离目标的最大距离，染色时使用最大距离对颜色进行缩放
+        # 最大距离为四个角离目标的最大距离(再加1)，染色时使用最大距离对颜色进行缩放
         self.max_value = np.max([np.abs(np.subtract(self.goal, s)).sum() for s in [(0,0), (0, maze.col-1), (maze.row-1,0), (maze.row-1,maze.col-1)]]) + 1
-        print(self.max_value)
+        self.neighbors = maze.neighbors
 
     def _state_q_init(self, state):
         """
@@ -588,18 +623,8 @@ class DP(RL):
         两个相邻state之间的距离
         如果其中有一个是陷井，距离设为一个很大的值，其它相邻状态间的距离均为1
         """
-        assert np.abs(np.subtract(state1,state2).sum()) == 1, 'states are not neighbors'
-
-        if state1 in self.traps or state2 in self.traps:
-            return 99999
-        else:
-            return 1
-
-    def neighbors(self, state):
-        """
-        取一个状态的邻近状态
-        """
-        return [self.next_state(a, state) for a in self.maze.state_actions(state)]
+        assert np.abs(np.subtract(state1,state2)).sum() == 1, 'states are not neighbors'
+        return 99999 if state1 in self.traps or state2 in self.traps else 1
 
     @staticmethod
     def neighbor_action(state1, state2):
@@ -646,7 +671,7 @@ class DP(RL):
 
     def _learning(self):
         to_eval = [self.goal]  # 待评估状态
-        while len(to_eval) > 0:
+        while len(to_eval) > 0 and self.started():
             self.wait()
             state = to_eval.pop(0)
             dist0 = self.state_dist(state)
@@ -687,7 +712,6 @@ class QLearning(RL):
             # print(state, action, q)
         # self.print_updates(updates)
         self.print_qtable()
-        self.update_episode()
         # self.maze.clear_message()
 
     def simulate(self):
@@ -698,8 +722,6 @@ class QLearning(RL):
             # self.maze.print_message(', '.join(map(str, (traces[-1]))))
             self.update_step()
             self.wait_period()
-        self.wait_period(0.5)
-        self.random_init_state()
         return traces
 
 
@@ -720,7 +742,6 @@ class MonteCarlo(RL):
             self.update_q(state, action, q)
             # print(state, action, q)
         self.print_qtable()
-        self.update_episode()
         # self.maze.clear_message()
 
     def simulate(self):
@@ -731,8 +752,6 @@ class MonteCarlo(RL):
             # self.maze.print_message(', '.join(map(str, (traces[-1]))))
             self.update_step()
             self.wait_period()
-        self.wait_period(0.5)
-        self.random_init_state()
         return traces
 
 
@@ -776,10 +795,6 @@ class TDLearning(RL):
             self.wait_period()
             self.update_step()
         self.learning_to_terminal()
-        self.update_episode()
-        self.wait_period(0.5)
-        self.random_init_state()
-        self.wait_period()
 
 
 class SarsaLambda(RL):
@@ -815,6 +830,8 @@ class SarsaLambda(RL):
         alpha = 1 / ntable[action]
         q = self.q(state, action)
         q = q + alpha * delta
+        if q > 1:
+            print(q, self.q(state, action), alpha, delta)
         self._update_q(state, action, q)
         # 如果更新量太小且已经更新过，不需要显示更新
         if np.abs(alpha * delta) > self.min_q_update_print or state not in self.updated:
@@ -840,7 +857,8 @@ class SarsaLambda(RL):
 
             next_action = self.epsilon_greedy()
             q_target = reward + self.gamma * self.q(next_state, next_action)
-
+            if q_target > 1:
+                print('q_target:', q_target, state, action, next_state, next_action)
             q_eval = self.q(state, action)
             delta = q_target - q_eval
 
@@ -851,10 +869,7 @@ class SarsaLambda(RL):
             self.discount_eligibility_trace()
             self.update_step()
             action = next_action
-        self.update_episode()
         self.reset_eligibility_trace()
-        self.wait_period(1.5)
-        self.random_init_state()
 
     def reset_eligibility_trace(self):
         for s,e in self.trace_iter():
@@ -881,10 +896,6 @@ class SARSA(RL):
             self.update_step()
             action = next_action
             self.wait_period()
-        self.update_episode()
-        self.wait_period(0.5)
-        self.random_init_state()
-        self.wait_period()
 
 
 class DQN:
@@ -905,6 +916,7 @@ class Value:
     def __bool__(self):
         return bool(self.value)
 
+
 print_time_flag = False
 
 def print_use_time(start, info, min_time=1):
@@ -914,10 +926,6 @@ def print_use_time(start, info, min_time=1):
             print(info, 'use:', use_time)
 
 if __name__ == '__main__':
-    mz = Maze(traps=[(3,2), (2,4)], goal=(4,4), row=7, col=7)
-    # rl = QLearning(maze=mz)
-    # rl = TDLearning(maze=mz)
-    # rl.start()
+    Maze(traps=[(3,2), (2,4)], goal=(4,4), row=7, col=7)
     tk.mainloop()
-    # DP(mz).learning()
     print('*********** ended ***********')
