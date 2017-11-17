@@ -19,7 +19,7 @@ from tkinter import ttk
 """
 
 class Maze:
-    def __init__(self, traps, goal, row=5, col=5, w=50, period=0.5, color_scale=1, print_trace_flag=True):
+    def __init__(self, traps, goal, row=5, col=5, w=50, period=0.5, print_trace_flag=True):
         self.actions = ['LEFT', 'UP', 'RIGHT', 'DOWN'] # 动作
         self.traps = traps  # 陷井
         self.goal = goal    # 目标
@@ -28,7 +28,6 @@ class Maze:
         self.col = col
         self.w = w
         self.period = Value(period)  # 移动间隔时间
-        self.color_scale = color_scale
         self.state = (0,0)  # 初始状态
         self.move_step = {'LEFT':(0, -1), 'UP':(-1, 0), 'RIGHT':(0, 1), 'DOWN':(1, 0)}
         self.print_trace_flag = print_trace_flag
@@ -91,7 +90,7 @@ class Maze:
 
         # 学习方法选择
         learning_method = tk.StringVar()
-        methods = ('Dydamic Programming', 'QLearning', 'SARSA', 'MonteCarlo', '3STEP-TD', 'Sarsa(λ)') # 下拉列表的值
+        methods = ('Dydamic Programming', 'QLearning', 'SARSA', 'MonteCarlo', '3STEP-TD', 'Sarsa(λ)', 'ValueGradient') # 下拉列表的值
         method_choosen = ttk.Combobox(window, width=12, textvariable=learning_method, values=methods, state='readonly')
         method_choosen.current(0)
         method_choosen.place(x=win_width-240, y=canvas_height+50)
@@ -209,21 +208,23 @@ class Maze:
             self.started(True)
             self.event.set()
             method = self.learning_method.get()
-            if method == 'Dydamic Programming':
+            if method == 'DydamicProgramming':
                 self.canvas.itemconfig(self.rec, state=tk.HIDDEN)
                 self.rl = DydamicProgramming(self)
             elif method == 'MonteCarlo':
-                self.rl = MonteCarlo(self)
+                self.rl = MonteCarlo(self, color_scale = 1.15)
             elif method == 'QLearning':
-                self.rl = QLearning(self)
+                self.rl = QLearning(self, color_scale = 1.5)
             elif method == 'TDLearning':
                 self.rl = TDLearning(self)
             elif method == '3STEP-TD':
                 self.rl = TDLearning(self, nstep=3)
             elif method == 'SARSA':
-                self.rl = SARSA(self)
+                self.rl = SARSA(self, alpha=0.1)
             elif method == 'Sarsa(λ)':
-                self.rl = SarsaLambda(self)
+                self.rl = SarsaLambda(self, lambda_=0.95)
+            elif method == 'ValueGradient':
+                self.rl = ValueGradient(self, alpha=0.2)
             self.rl.start()
             self.start_text.set('stop')
         elif self.start_text.get() == 'stop':
@@ -355,12 +356,10 @@ class Maze:
                 self.canvas.delete(line)
 
     def color(self, value):
-        old_value = value
         if value > 1.0:
-            print(value)
             value = 1 - value / self.rl.max_value
         if value >= 0:
-            c = int(255 * (1 - np.abs(value)) * self.color_scale)
+            c = int(255 * (1 - np.abs(value)) * self.rl.color_scale)
             if c > 255:
                 c = 255
             c = '%02x' % c
@@ -368,23 +367,21 @@ class Maze:
             rgb = '#' + c + 'ff' + c
         else:
             # 负值为红色
-            c = int(255 * (1 + value) / self.color_scale)
+            c = int(255 * (1 + value) / self.rl.color_scale)
             if c > 255:
                 c = 255
             c = '%02x' % c
             rgb = '#ff' + c + c
         # print(value, rgb)
-        if old_value != 0 and rgb == '#ffffff':
-            print(value)
         return rgb
 
 
 class RL:
-    def __init__(self, maze, gamma=0.9, epsilon=0.6, alpha=0.5):
+    def __init__(self, maze, gamma=0.9, epsilon=0.6, alpha=0.5, color_scale=1.0):
         self.maze = maze
         self.gamma = gamma
         self.epsilon = epsilon
-        self.alpha = alpha
+        self._alpha = alpha
         self.actions = maze.actions
         self.move_step = {'LEFT':(0,-1), 'UP':(-1,0), 'RIGHT':(0,1), 'DOWN':(1,0)}
         self.state = maze.state
@@ -398,16 +395,26 @@ class RL:
         self.episode = 0
         self.step = 0
         self.updated = set()
-        self.min_q_update_print = 1e-4    # 显示更新的最小增量(因显示更新比较耗时)
+        self.min_value_update_print = 1e-4    # 更新价值显示的最小增量(因显示更新比较耗时)
         self.max_value = 1
         self.next_state = maze.next_state
+        self.color_scale = color_scale
+
+    def feature(self, state, action):
+        f = np.zeros(len(self.states) * len(self.actions))
+        i, j = state
+        index = (i * self.maze.col + j) * len(self.actions) + self.actions.index(action)
+        f[index] = 1
+        return f
 
     def _state_q_init(self, state):
         actions = self.maze.state_actions(state)
         return pd.Series(data=np.zeros(len(actions)), index=actions)
 
-    def move(self):
-        action = self.epsilon_greedy()
+    def move(self, policy=None):
+        if policy is None:
+            policy = self.epsilon_greedy
+        action = policy()
         reward, next_state = self.take_action(action)
         return action, reward, next_state
 
@@ -450,31 +457,45 @@ class RL:
 
     value = maxQ
 
-    def update_q(self, state, action, q_target, step='avg'):
+    def alpha(self, method='fixed', state=None, action=None):
         """
-        用现实的q来更新qtable中估计的Q值
-        :param q_target: q现实
-        :param step: alpha = 1/N if avg or self.alpha if fixed
+        计算更新步长alpha值
+        :param method: alpha = 1/N if avg else self.alpha if fixed
+        :param state:   状态
+        :param action:  动作
         """
-        if step == 'fixed':
-            alpha = self.alpha
-        elif step == 'avg':
+        if method == 'fixed':
+            return self._alpha
+        elif method == 'avg':
             # 取平均值
             ntable = self.state_ntable(state)
             ntable[action] += 1
-            alpha = 1 / ntable[action]
+            return 1 / ntable[action]
+        elif method == 'log':
+            ntable = self.state_ntable(state)
+            ntable[action] += 1
+            return 1 / np.log(ntable[action] + 2)
+        else:
+            raise Exception(method)
+
+    def update_q(self, state, action, q_target, step='avg'):
+        """
+        用现实的q来更新qtable中估计的Q值
+        :param q_target: 现实中计算得到的q
+        :param step: alpha = 1/N if avg else self.alpha if fixed
+        """
+        alpha = self.alpha(method=step, state=state, action=action)
         q_eval = self.q(state, action)
-        q_eval_new = q_eval + alpha * (q_target - q_eval)
-        self._update_q(state, action, q_eval_new)
+        delta = q_target - q_eval
+        self._update_q(state, action, alpha * delta)
 
-        # 如果更新量太小且已经更新过，不需要显示更新
-        if np.abs(q_eval_new - q_eval) > self.min_q_update_print or state not in self.updated:
+    def _update_q(self, state, action, delta):
+        old_value = self.value(state)
+        self.state_qtable(state)[action] += delta
+        # 如果更新量太小且不是第一次更新，不需要显示更新
+        if  np.abs(self.value(state) - old_value) > self.min_value_update_print or state not in self.updated:
             self.print_updates([state])
-
         self.updated.add(state)
-
-    def _update_q(self, state, action, q):
-        self.state_qtable(state)[action] = q
 
     def epsilon_greedy(self):
         """
@@ -525,11 +546,12 @@ class RL:
         try:
             while self.started() and not self._learning():
                 self.clear_trace()
-                if self.started():
-                    self.update_episode()
-                    self.wait_period(0.5)
-                    self.random_init_state()
-                    self.wait_period()
+                self.update_episode()
+                self.wait_period(0.5)
+                self.random_init_state()
+                self.wait_period()
+        except StopLearning:
+            print('Stopped')
         finally:
             self.clear_trace()
             self.move_to((0, 0), draw_path=False)
@@ -545,6 +567,16 @@ class RL:
         """
         raise NotImplementedError
 
+    def simulate(self):
+        traces = []     # [(state,action,reward,next_state), ... ]
+        while self.started() and self.state not in self.terminals:
+            self.wait()
+            traces.append((self.state, *self.move()))
+            # self.maze.print_message(', '.join(map(str, (traces[-1]))))
+            self.update_step()
+            self.wait_period()
+        return traces
+
     def best_path(self, state, maxlen=None):
         """
         获取某个状态的最优路径，路径最长maxlen个
@@ -559,8 +591,10 @@ class RL:
         return path
 
     def print_updates(self, updates):
+        start = time.time()
         update_values = [(state, self.maxq(state)) for state in updates]
         self.maze.print_value(update_values)
+        print_use_time(start, 'print_updates')
 
     def print_qtable(self):
         # for i,row in enumerate(self.qtable):
@@ -582,8 +616,9 @@ class RL:
         self.maze.clear_trace()
 
     def wait_period(self, scale=1.0):
-        if not self.closed():
-            time.sleep(self.maze.period() * scale)
+        if not self.started():
+            raise StopLearning
+        time.sleep(self.maze.period() * scale)
 
     def closed(self):
         return self.maze.closed
@@ -595,6 +630,8 @@ class RL:
         threading.Thread(target=self.learning).start()
 
     def wait(self):
+        if not self.started():
+            raise StopLearning
         self.maze.event.wait()
 
 
@@ -606,7 +643,6 @@ class DydamicProgramming(RL):
         i, j = self.goal
         path[i][j] = (0, 'END') # 目标状态的距离和路径
         self.path = path
-        maze.color_scale = 1
         # 最大距离为四个角离目标的最大距离(再加1)，染色时使用最大距离对颜色进行缩放
         self.max_value = np.max([np.abs(np.subtract(self.goal, s)).sum() for s in [(0,0), (0, maze.col-1), (maze.row-1,0), (maze.row-1,maze.col-1)]]) + 1
         self.neighbors = maze.neighbors
@@ -696,43 +732,25 @@ class DydamicProgramming(RL):
 class QLearning(RL):
     """
     倒序更新的QLearning
+    q_target = r + γv(s')
+    q_eval = q_eval + α(q_target - q_eval)
     """
-    def __init__(self, maze):
-        RL.__init__(self, maze)
-        maze.color_scale = 1.5
-
     def _learning(self):
         traces = self.simulate()
         traces.reverse()
-        updates = []
         for state, action, reward, next_state in traces:
-            q = reward + self.gamma * self.maxq(next_state)
-            self.update_q(state, action, q, step='fixed')
-            updates.append(state)
-            # print(state, action, q)
-        # self.print_updates(updates)
+            q_target = reward + self.gamma * self.maxq(next_state)
+            self.update_q(state, action, q_target, step='fixed')
         self.print_qtable()
         # self.maze.clear_message()
-
-    def simulate(self):
-        traces = []     # [(state,action,reward,next_state), ... ]
-        while self.started() and self.state not in self.terminals:
-            self.maze.event.wait()
-            traces.append((self.state, *self.move()))
-            # self.maze.print_message(', '.join(map(str, (traces[-1]))))
-            self.update_step()
-            self.wait_period()
-        return traces
 
 
 class MonteCarlo(RL):
     """
     使用Monte-Carlo方法进行学习
+    q_target = r1 + γ*r2 + (γ**2)*r3 + ...
+    q_eval = q_eval + α(q_target - q_eval)
     """
-    def __init__(self, maze):
-        RL.__init__(self, maze)
-        maze.color_scale = 1.15
-
     def _learning(self):
         traces = self.simulate()
         traces.reverse()
@@ -740,24 +758,15 @@ class MonteCarlo(RL):
         for state, action, reward, next_state in traces:
             q = reward + self.gamma * q
             self.update_q(state, action, q)
-            # print(state, action, q)
         self.print_qtable()
         # self.maze.clear_message()
-
-    def simulate(self):
-        traces = []     # [(state,action,reward,next_state), ... ]
-        while self.started() and self.state not in self.terminals:
-            self.maze.event.wait()
-            traces.append((self.state, *self.move()))
-            # self.maze.print_message(', '.join(map(str, (traces[-1]))))
-            self.update_step()
-            self.wait_period()
-        return traces
 
 
 class TDLearning(RL):
     """
     使用N步进行更新的TD算法
+    q_target = r1 + γr2 + (γ**2)r3 + ... (γ**n)rn
+    q_eval = q_eval + α(q_target - q_eval)
     """
     def __init__(self, maze, nstep=1):
         RL.__init__(self, maze)
@@ -798,6 +807,13 @@ class TDLearning(RL):
 
 
 class SarsaLambda(RL):
+    """
+    q_target = r + γ*r(s',a')
+    δ = q_target - q_eval
+    e = 1 对于当前状态s
+      = λγe 对于其它状态
+    q_eval = q_eval + αδe
+    """
     def __init__(self, maze, lambda_=0.9):
         RL.__init__(self, maze)
         self.lambda_ = lambda_
@@ -823,28 +839,12 @@ class SarsaLambda(RL):
     def e(self, state, action):
         return self.state_trace(state)[action]
 
-    def update_q(self, state, action, delta):
-        # 取平均值
-        ntable = self.state_ntable(state)
-        ntable[action] += 1
-        alpha = 1 / ntable[action]
-        q = self.q(state, action)
-        q = q + alpha * delta
-        if q > 1:
-            print(q, self.q(state, action), alpha, delta)
-        self._update_q(state, action, q)
-        # 如果更新量太小且已经更新过，不需要显示更新
-        if np.abs(alpha * delta) > self.min_q_update_print or state not in self.updated:
-            start = time.time()
-            self.print_updates([state])
-            print_use_time(start, 'print_updates')
-        self.updated.add(state)
-
     def update_qtable(self, delta):
         for state,trace in self.trace_iter():
             for action, e in trace.items():
                 if e > 0:
-                    self.update_q(state, action, delta * e)
+                    alpha = self.alpha(method='log', state=state, action=action)
+                    self._update_q(state, action, alpha * delta * e)
 
     def _learning(self):
         action = self.epsilon_greedy()
@@ -879,10 +879,9 @@ class SarsaLambda(RL):
 class SARSA(RL):
     """
     等同于TD(0)或1 step TD
+    q_target = r + γ*r(s',a')
+    q_eval = q_eval + α(q_target - q_eval)
     """
-    def __init__(self, maze):
-        RL.__init__(self, maze, alpha=0.1)
-
     def _learning(self):
         action = self.e_greedy()
         while  self.started() and self.state not in self.terminals:
@@ -898,7 +897,161 @@ class SARSA(RL):
             self.wait_period()
 
 
+class ValueGradient(RL):
+    """
+    使用线性函数近似Q值
+    x=f(s,a)
+    q_eval = w.x
+    loss = (q_target - q_eval) ** 2 / 2
+    δq = q_target - q_eval
+    ▽loss = -(q_target - q_eval) * x = - δq * x
+    ∆w = - α * ▽loss = α * δv * x
+    --- using eligibility trace ---
+    e = λγe + ▽q_eval = λγe + x
+    ∆w = α * δv * e
+    """
+    def __init__(self, maze, gamma=0.9, epsilon=0.6, alpha=0.5, color_scale=1.0, lambda_=0.9):
+        RL.__init__(self, maze, gamma, epsilon, alpha, color_scale)
+        self.w = np.zeros(len(self.states) * len(self.actions))
+        self.eligibility_trace = self.w.copy()
+        self.lambda_ = lambda_
+        self.traces = set() # 一个回合经过的状态
+
+    def epsilon_greedy(self):
+        """
+        使用epsilon-greedy策略选择下一步动作
+        :return: 下一个动作
+        """
+        if np.random.random() < self.epsilon:
+            # 选取Q值最大的
+            return self.pi_star(self.state)
+        else:
+            #随机选择
+            return np.random.choice(self.maze.state_actions(self.state))
+
+    def pi_star(self, state):
+        """
+        使用最优策略选取动作
+        """
+        qtable = self.state_qtable(state)
+        indexes = np.arange(len(qtable))
+        np.random.shuffle(indexes)
+        qtable = qtable[indexes]  # 将顺序打乱,以免值相同时总选同一个动作
+        return np.argmax(qtable)
+
+    def state_qtable(self, state):
+        state_actions = self.maze.state_actions(state)
+        state_q = [self.q(state, a) for a in state_actions]
+        qtable = pd.Series(data=state_q, index=state_actions)
+        return qtable
+
+    def increase_eligibility_trace(self, state, action):
+        i,j = state
+        index = (i * self.maze.col + j) * len(self.actions) + self.actions.index(action)
+        self.eligibility_trace[index] = 1
+
+    def discount_eligibility_trace(self):
+        """
+        将所有eligibility_trace的值用λγ进行折算
+        """
+        self.eligibility_trace *= self.gamma * self.lambda_
+
+    def e(self, state, action):
+        i, j = state
+        index = (i * self.maze.col + j) * len(self.actions) + self.actions.index(action)
+        return self.eligibility_trace[index]
+
+    def q(self, state, action):
+        return self.w.dot(self.feature(state, action))
+
+    def maxq(self, state):
+        return np.max([self.q(state,a) for a in self.maze.state_actions(state)])
+
+    def update_w(self, delta):
+        """
+        ∆w = α * δv * e
+        """
+        old_w = self.w.copy()
+        self.w += self.alpha() * delta * self.eligibility_trace
+        # 是否更新显示
+        for s in self.states:
+            old_value = np.max([old_w.dot(self.feature(s, a)) for a in self.maze.state_actions(s)])
+            value = self.maxq(s)
+            if any((self.e(s, a) for a in self.actions)):
+                # 如果(本回合经过的状态)更新量太小且不是第一次更新，不需要显示更新
+                if np.abs(value - old_value) > self.min_value_update_print or s not in self.updated:
+                    self.print_updates([s])
+                self.updated.add(s)
+
+    def _learning(self):
+        action = self.epsilon_greedy()
+        while self.started() and self.state not in self.terminals:
+            self.maze.event.wait()
+            self.wait_period()
+            state = self.state
+            reward, next_state = self.take_action(action)
+            self.increase_eligibility_trace(state, action)
+
+            next_action = self.epsilon_greedy()
+            q_target = reward + self.gamma * self.q(next_state, next_action)
+            if q_target > 1:
+                print('q_target:', q_target, state, action, next_state, next_action)
+            q_eval = self.q(state, action)
+            delta = q_target - q_eval
+
+            start = time.time()
+            self.update_w(delta)
+            print_use_time(start, 'update_qtable', min_time=10)
+
+            self.discount_eligibility_trace()
+            self.update_step()
+            action = next_action
+        self.eligibility_trace[:] = 0
+
+
 class DQN:
+    """
+    Deep Q-Learning NetWork
+    使用一个深度神经网络对Q进行近似
+    为了使网络稳定收敛，使用了以下技巧：
+    1. 训练时对样本进行随机抽样
+    2. 使用两个网络，一个进行训练，一个对价值进行评估，训练交替进行
+    """
+    pass
+
+
+class MCPG(RL):
+    """
+    MonteCarloPolicyGradient
+    使用线性函数近似策略，蒙特卡洛方法进行训练
+    x=f(s,a)
+    p(s,a) = softmax(s,a) = e**θ.x / Σe**θ.x(s,a) (for all a ∊ A(s))
+    ▽lnp = x - (Σe**θ.x(s,a) * x(s,a)) / Σe**θ.x(s,a) (for all a ∊ A(s))
+    ∆θ = α * ▽lnp * G (in monte-carlo)
+    --- using baseline ---
+    ∆θ = α * ▽lnp * (G - v); v = maxQ(s)
+    --- in actor-critic ---
+    ∆θ = α * ▽lnp * (q - v_eval); q=r+γv_eval(s'), v_eval由critic评估
+    """
+    def __init__(self, maze, gamma=0.9, epsilon=0.6, alpha=0.5, color_scale=1.0):
+        RL.__init__(self, maze, gamma, epsilon, alpha, color_scale)
+        self.theta = np.zeros(len(self.states) * len(self.actions))
+
+    def softmax(self, state):
+        pass
+
+    def policy_gradient(self, state, action):
+        pass
+
+    def _learning(self):
+        pass
+
+
+class ActorCritic:
+    pass
+
+
+class StopLearning(BaseException):
     pass
 
 
