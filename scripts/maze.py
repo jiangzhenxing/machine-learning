@@ -1041,7 +1041,7 @@ class ValueGradient(RLApproximation):
         """
         ∆w = α * δv * e
         """
-        self.w += self.alpha() * delta * self.eligibility_trace
+        self.w += self._alpha * delta * self.eligibility_trace
         # 是否更新显示
         for s in self.states:
             if any((self.e(s, a) for a in self.actions)):
