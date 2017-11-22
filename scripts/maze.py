@@ -412,18 +412,16 @@ class Maze:
             self.canvas.delete(line)
         self.path_state = None
 
-    def next_state(self, action, state=None):
-        if state is None:
-            state = self.state
-        x,y = state
-        step_x, step_y = self.move_step[action]
-        return x + step_x, y + step_y
+    def next_state(self, state, action):
+        i,j = state
+        step_i, step_j = self.move_step[action]
+        return i + step_i, j + step_j
 
     def neighbors(self, state):
         """
         取一个状态的邻近状态
         """
-        return [self.next_state(a, state) for a in self.state_actions(state)]
+        return [self.next_state(state, a) for a in self.state_actions(state)]
 
     def draw_trace(self, state, next_state):
         if self.print_trace_flag:
@@ -516,14 +514,14 @@ class RL:
 
     def move(self):
         action = self.policy()
-        reward, next_state = self.take_action(action)
-        return action, reward, next_state
+        return self.take_action(action)
 
     def take_action(self, action):
-        next_state = self.next_state(action)
-        reward = self.reward(action)
+        state = self.state
+        reward = self.reward(state, action)
+        next_state = self.next_state(state, action)
         self.move_to(next_state)
-        return reward, next_state
+        return state, action, reward, next_state
 
     def move_to(self, next_state, draw_path=True, step=1, waited=True):
         self.maze.move_to(next_state)
@@ -534,8 +532,8 @@ class RL:
         if waited:
             self.wait_period()
 
-    def reward(self, action, state=None):
-        next_state = self.next_state(action, state)
+    def reward(self, state, action):
+        next_state = self.next_state(state, action)
         if next_state in self.traps:
             return -1
         elif next_state == self.goal:
@@ -643,7 +641,7 @@ class RL:
         """
         traces = []
         while self.state not in self.terminals:
-            traces.append((self.state, *self.move()))
+            traces.append(self.move())
         return traces
 
     def best_path(self, state, maxlen=None):
@@ -654,7 +652,7 @@ class RL:
             maxlen = self.row + self.col * 2
         path = [state]
         while len(path) < maxlen and path[-1] not in self.terminals:
-            next_state = self.next_state(self.pi_star(state), state)
+            next_state = self.next_state(state, self.pi_star(state))
             path.append(next_state)
             state = next_state
         return path
@@ -832,7 +830,7 @@ class DydamicProgramming(RLTableau):
         """
         path = [state]
         while self.state_path(state) != '' and state not in self.terminals:
-            state = self.next_state(self.state_path(state), state)
+            state = self.next_state(state, self.state_path(state))
             path.append(state)
         return path
 
@@ -879,8 +877,7 @@ class QLearning(RLTableau):
     """
     def _learning(self):
         while self.state not in self.terminals:
-            state = self.state
-            action, reward, next_state = self.move()
+            state, action, reward, next_state = self.move()
             q = reward + self.gamma * self.value(next_state)
             self.update_q(state, action, q)
 
@@ -946,8 +943,7 @@ class TDLearning(RLTableau):
 
     def _learning(self):
         while  self.state not in self.terminals:
-            state = self.state
-            action, reward, next_state = self.move()
+            state, action, reward, next_state = self.move()
             self.steps.append((state, action, reward, next_state))
             if len(self.steps) == self.nstep:
                 self.learning_nsteps()
@@ -998,8 +994,7 @@ class SarsaLambda(RLTableau):
     def _learning(self):
         action = self.policy()
         while  self.state not in self.terminals:
-            state = self.state
-            reward, next_state = self.take_action(action)
+            state, action, reward, next_state = self.take_action(action)
             next_action = self.policy()
             q_target = reward + self.gamma * self.q(next_state, next_action)
             q_eval = self.q(state, action)
@@ -1025,8 +1020,7 @@ class SARSA(RLTableau):
     def _learning(self):
         action = self.epsilon_greedy()
         while  self.state not in self.terminals:
-            state = self.state
-            reward, next_state = self.take_action(action)
+            state, action, reward, next_state = self.take_action(action)
             next_action = self.epsilon_greedy()
             q = reward + self.gamma * self.q(next_state, next_action)
             self.update_q(state, action, q)
@@ -1112,8 +1106,7 @@ class ValueGradient(RLApproximation):
     def _learning(self):
         action = self.epsilon_greedy()
         while self.state not in self.terminals:
-            state = self.state
-            reward, next_state = self.take_action(action)
+            state, action, reward, next_state = self.take_action(action)
             self.increase_eligibility_trace(state, action)
 
             next_action = self.epsilon_greedy()
@@ -1244,8 +1237,8 @@ class MCPolicyGradient(RLApproximationUseKeras):
                 # 环路不能到达终点，故价值为0
                 return 0
             action = self.pi_star(state)
-            next_state = self.next_state(action, state)
-            reward = self.reward(action, state)
+            next_state = self.next_state(state, action)
+            reward = self.reward(state, action)
             value += reward * discount
             discount *= self.gamma
             passed.add(state)
@@ -1317,8 +1310,7 @@ class ActorCritic(MCPolicyGradient):
 
     def _learning(self):
         while  self.state not in self.terminals:
-            state = self.state
-            action, reward, next_state = self.move()
+            state, action, reward, next_state = self.move()
             q_target = reward + self.gamma * self.value(next_state)
 
             self.eligibility_trace += self.state_feature(state)
