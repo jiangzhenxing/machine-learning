@@ -17,11 +17,11 @@ info = \
 鼠标移到格子上可查看动作的Q值(或概率)
 点击格子可进行路径规划
 训练方法可以在下拉框中选择
-点击start/stop按扭以开始/结束训练
-点击losses按扭可查看损失曲线
-点击hide/show按扭以隐藏/显示运动轨迹
-点击faster,slower按扭可以调节运动速度
-点击pause/resume按扭可以暂停/恢复训练
+点击"start/stop"按扭以开始/结束训练
+点击"losses"按扭可查看损失曲线
+点击"hide/show"按扭以隐藏/显示运动轨迹
+点击"faster","slower"按扭可以调节运动速度
+点击"pause/resume"按扭可以暂停/恢复训练
 格子的数量，目标和陷井可以在代码中设置
 直接使用python3即可运行
 需要安装numpy,pandas
@@ -456,7 +456,7 @@ class Maze:
             ax.grid()
             line, = plt.plot(losses, 'c--', linewidth=2)
             plt.subplots_adjust(left=0.6/width, bottom=0.4/FIGURE_HEIGHT, right=1-0.4/width, top=1-0.4/FIGURE_HEIGHT, hspace = 0.2, wspace = 0.2)
-            plt.title('LOSSES')
+            plt.title('VALUE MSE LOSSES')
             plt.show(block=False)
 
     @staticmethod
