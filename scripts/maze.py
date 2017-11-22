@@ -191,7 +191,7 @@ class Maze:
         self.traces = []
         # 显示的价值，判断是否需要更新显示的时候使用，每次调用canvas.itemget从组件中获取速度太慢
         self.value_table = [[0 for _ in range(row)] for _ in range(col)]
-        self.printed = set()
+        self.walked = set()
         # 使用动态规划把状态到目标的最小距离计算出来
         self.distances = DydamicProgramming(self).distances()
 
@@ -207,8 +207,8 @@ class Maze:
             self.canvas.itemconfig(self.rec, state=tk.NORMAL)
 
     def position_to_state(self, x, y):
-        i = int(y / self.w)
-        j = int(x / self.w)
+        i = y // self.w
+        j = x // self.w
         if i > self.row - 1: i = self.row - 1
         if j > self.col - 1: j = self.col - 1
         return i,j
@@ -245,11 +245,10 @@ class Maze:
         i,j = state
         v = value
         old_v = self.value_table[i][j]
-        if round(v,2) - round(old_v, 2) != 0 or state not in self.printed:
+        if round(v,2) - round(old_v, 2) != 0:
             self.canvas.itemconfig(self.values[i][j], text=str(round(v,2)).replace('0.','.') if 0 < np.abs(v) < 1 else str(int(v)))
             self.canvas.itemconfig(self.grid[i][j], fill=self.color(v))
             self.value_table[i][j] = value
-            self.printed.add(state)
 
     def print_message(self, msg):
         self.message_text.insert(index='end', chars=msg + '\n')
@@ -327,7 +326,7 @@ class Maze:
         self.print_step(0)
         self.print_episode(0)
         self.delete_path()
-        self.printed.clear()
+        self.walked.clear()
 
     def print_episode(self, episode):
         self.episode_text.set(str(episode))
@@ -429,6 +428,10 @@ class Maze:
     def draw_trace(self, state, next_state):
         if self.print_trace_flag:
             self.traces.append(self.canvas.create_line(*self.state_position(state), self.state_position(next_state), fill='yellow', width=2))
+        if state not in self.walked:
+            i,j = state
+            self.canvas.itemconfig(self.grid[i][j], fill='white')
+            self.walked.add(state)
 
     def clear_trace(self):
         for line in self.traces:
@@ -504,7 +507,6 @@ class RL:
         self.states = maze.states
         self.episode = 0
         self.step = 0
-        self.min_value_update_print = 1e-4    # 更新价值显示的最小增量(因显示更新比较耗时)
         self.max_value = 1
         self.next_state = maze.next_state
         self.color_scale = color_scale
@@ -1184,7 +1186,7 @@ class DQN(RLApproximationUseKeras):
     def _learning(self):
         traces = list(set(self.simulate()))
         num = min(3, len(traces))
-        for _ in range((int(len(traces) / num) + 1) * 2):
+        for _ in range((len(traces) // num + 1) * 2):
             samples = self.sample(traces, num)
             x = np.array([self.q_feature(s, a) for s, a, r, s1 in samples])
             y = np.array([r + self.gamma * self.maxq(s1) for s, a, r, s1 in samples])
