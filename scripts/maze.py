@@ -16,6 +16,12 @@ info = \
 格子上显示的是状态的价值
 鼠标移到格子上可查看动作的Q值(或概率)
 点击格子可进行路径规划
+训练方法可以在下拉框中选择
+点击start/stop按扭以开始/结束训练
+点击losses按扭可查看损失曲线
+点击hide/show按扭以隐藏/显示运动轨迹
+点击faster,slower按扭可以调节运动速度
+点击pause/resume按扭可以暂停/恢复训练
 格子的数量，目标和陷井可以在代码中设置
 直接使用python3即可运行
 需要安装numpy,pandas
@@ -26,12 +32,15 @@ TRAPS = [(3,2), (2,4)]  # 陷井
 GOAL = (4,4)            # 目标
 ROW = 7                 # 格子的行数
 COL = 7                 # 格子的列数
+FIGURE_HEIGHT = 6       # 损失图的高度
+FIGURE_MIN_WIDTH = 8    # 损失图的最小宽度
+FIGURE_MAX_WIDTH = 14   # 损失图的最大宽度
 
-print_time_flag = True
-print_time_func = {'print_value'}
+print_time_flag = False
+print_time_func = {'print_value'} # update_qtable
 def print_use_time(min_time=1):
     """
-    方法调用计时装饰器
+    生成一个方法调用计时装饰器
     :param min_time: 需要打印的最小调用时间
     """
     def timer(func):
@@ -133,7 +142,10 @@ class Maze:
 
         # 开始按扭
         start_text = tk.StringVar(value='start')
-        tk.Button(window, textvariable=start_text, command=self.start, width=5).place(x=170, y=canvas_height+50)
+        tk.Button(window, textvariable=start_text, command=self.start, width=5).place(x=160, y=canvas_height+50)
+
+        # 显示损失按扭
+        tk.Button(window, text='losses', command=self.draw_loss, width=5).place(x=235, y=canvas_height + 50)
 
         # 帮助按扭
         tk.Button(window, text='help', command=self.show_info, width=5).place(x=10, y=canvas_height + 87)
@@ -180,6 +192,8 @@ class Maze:
         # 显示的价值，判断是否需要更新显示的时候使用，每次调用canvas.itemget从组件中获取速度太慢
         self.value_table = [[0 for _ in range(row)] for _ in range(col)]
         self.printed = set()
+        # 使用动态规划把状态到目标的最小距离计算出来
+        self.distances = DydamicProgramming(self).distances()
 
     def create_rectangle(self, i, j, **config):
         return self.canvas.create_rectangle(j * self.w, i * self.w, (j+1) * self.w, (i+1) * self.w, **config)
@@ -429,6 +443,22 @@ class Maze:
             self.print_trace_flag = True
             self.trace_text.set('hide')
 
+    def draw_loss(self):
+        if self.rl is None:
+            return
+        losses = self.rl.losses
+        if len(losses) > 1:
+            import matplotlib.pyplot as plt
+            width = max(int(len(losses) * 0.1), FIGURE_MIN_WIDTH)
+            width = min(width, FIGURE_MAX_WIDTH)
+            plt.figure(figsize=(width, FIGURE_HEIGHT))  # 设置画布尺寸大小，会影响自动弹出来图框的大小
+            ax = plt.subplot(1, 1, 1)  # 画子图
+            ax.grid()
+            line, = plt.plot(losses, 'c--', linewidth=2)
+            plt.subplots_adjust(left=0.6/width, bottom=0.4/FIGURE_HEIGHT, right=1-0.4/width, top=1-0.4/FIGURE_HEIGHT, hspace = 0.2, wspace = 0.2)
+            plt.title('LOSSES')
+            plt.show(block=False)
+
     @staticmethod
     def show_info():
         messagebox.showinfo('README', message=info)
@@ -468,6 +498,8 @@ class RL:
         self.traps = maze.traps
         self.goal = maze.goal
         self.terminals = maze.terminals
+        self.row = maze.row
+        self.col = maze.col
         self.value_star = np.zeros((5,5))
         self.states = maze.states
         self.episode = 0
@@ -476,6 +508,9 @@ class RL:
         self.max_value = 1
         self.next_state = maze.next_state
         self.color_scale = color_scale
+        self.delta = []
+        self.losses = []
+        self.true_value = None
 
     def move(self):
         action = self.policy()
@@ -567,21 +602,37 @@ class RL:
         else:
             self.random_init_state()
 
+    def compute_true_vallue(self):
+        self.true_value = [[self.gamma ** self.maze.distances[i][j] if (i,j) not in self.terminals else 0 for j in range(self.col)] for i in range(self.row)]
+
     def learning(self):
         try:
-            while not self._learning():
-                self.reset()
+            self.compute_true_vallue()
+            self.compute_loss()
+            while True:
+                self._learning()
+                self.after_learning()
         except StopLearning:
-            print('Stopped')
+            print('StopLearning')
         finally:
             self.stop()
 
     def _learning(self):
         """
-        一个学习过程
-        :return: True终止学习
+        一个学习回合
         """
         pass
+
+    def after_learning(self):
+        self.compute_loss()
+        self.clear_trace()
+        self.update_episode()
+        self.random_init_state()
+
+    def compute_loss(self):
+        value_eval = [[self.value((i, j)) for j in range(self.col)] for i in range(self.row)]
+        loss = np.mean(np.subtract(value_eval, self.true_value) ** 2)
+        self.losses.append(loss)
 
     def simulate(self):
         """
@@ -598,7 +649,7 @@ class RL:
         获取某个状态的最优路径，路径最长maxlen个
         """
         if maxlen is None:
-            maxlen = self.maze.row + self.maze.col * 2
+            maxlen = self.row + self.col * 2
         path = [state]
         while len(path) < maxlen and path[-1] not in self.terminals:
             next_state = self.next_state(self.pi_star(state), state)
@@ -633,11 +684,6 @@ class RL:
 
     def started(self):
         return self.maze.started and not self.closed()
-
-    def reset(self):
-        self.clear_trace()
-        self.update_episode()
-        self.random_init_state()
 
     def start(self):
         self.learning()
@@ -711,6 +757,7 @@ class RLTableau(RL):
         alpha = self.alpha(method=step, state=state, action=action)
         q_eval = self.q(state, action)
         delta = q_target - q_eval
+        self.delta.append(delta)
         self._update_q(state, action, alpha * delta)
 
     def _update_q(self, state, action, delta):
@@ -737,7 +784,7 @@ class DydamicProgramming(RLTableau):
         actions = self.maze.state_actions(state)
         return pd.Series(data=[''] * len(actions), index=actions)
 
-    def distance(self, state1, state2):
+    def dist(self, state1, state2):
         """
         两个相邻state之间的距离
         如果其中有一个是陷井，距离设为一个很大的值，其它相邻状态间的距离均为1
@@ -795,18 +842,31 @@ class DydamicProgramming(RLTableau):
             neighbors = self.neighbors(state)
             # print('eval:', state, neighbors)
             for neighbor in neighbors:
-                dist = self.distance(neighbor, state) + dist0
+                dist = self.dist(neighbor, state) + dist0
                 if dist < self.state_dist(neighbor):
                     self.update_path(neighbor, dist, self.neighbor_action(neighbor, state))
                     self.print_updates([neighbor])
                     to_eval.append(neighbor)
                     self.wait_period()
-        # self.print_path()
-        return True
+        raise StopLearning
 
-    def print_path(self):
-        for p in self.path:
-            print(p)
+    def distances(self):
+        """
+        返回所有状态到目标的最短距离
+        """
+        to_eval = [self.goal]  # 待评估状态
+        while len(to_eval) > 0:
+            state = to_eval.pop(0)
+            dist0 = self.state_dist(state)
+            neighbors = self.neighbors(state)
+            # print('eval:', state, neighbors)
+            for neighbor in neighbors:
+                dist = self.dist(neighbor, state) + dist0
+                if dist < self.state_dist(neighbor):
+                    self.update_path(neighbor, dist, self.neighbor_action(neighbor, state))
+                    to_eval.append(neighbor)
+        distance = [[self.state_dist((i,j)) for j in range(self.col)] for i in range(self.row)]
+        return distance
 
 
 class QLearning(RLTableau):
@@ -910,7 +970,7 @@ class SarsaLambda(RLTableau):
         return self.eligibility_trace[i][j]
 
     def trace_iter(self):
-        return (((i,j),self.eligibility_trace[i][j]) for i in range(self.maze.col) for j in range(self.maze.row))
+        return (((i,j),self.eligibility_trace[i][j]) for i in range(self.col) for j in range(self.row))
 
     def increase_eligibility_trace(self, state, action):
         self.state_trace(state)[action] = 1
@@ -947,9 +1007,9 @@ class SarsaLambda(RLTableau):
             self.update_qtable(delta)
             self.discount_eligibility_trace()
             action = next_action
-        self.reset_eligibility_trace()
 
-    def reset_eligibility_trace(self):
+    def after_learning(self):
+        super().after_learning()
         for s,e in self.trace_iter():
             e[:] = 0
 
@@ -980,7 +1040,7 @@ class RLApproximation(RL):
 
     def q_index(self, state, action):
         i, j = state
-        return (i * self.maze.col + j) * len(self.actions) + self.actions.index(action)
+        return (i * self.col + j) * len(self.actions) + self.actions.index(action)
 
     def state_feature(self, state):
         f = np.zeros(len(self.states))
@@ -989,11 +1049,11 @@ class RLApproximation(RL):
 
     def state_index(self, state):
         i, j = state
-        return i * self.maze.col + j
+        return i * self.col + j
 
     def index2state(self, index):
-        i = index // self.maze.col
-        j = index % self.maze.col
+        i = index // self.col
+        j = index % self.col
         return i,j
 
 
@@ -1019,7 +1079,7 @@ class ValueGradient(RLApproximation):
 
     def increase_eligibility_trace(self, state, action):
         i,j = state
-        index = (i * self.maze.col + j) * len(self.actions) + self.actions.index(action)
+        index = (i * self.col + j) * len(self.actions) + self.actions.index(action)
         self.eligibility_trace[index] = 1
 
     def discount_eligibility_trace(self):
@@ -1030,7 +1090,7 @@ class ValueGradient(RLApproximation):
 
     def e(self, state, action):
         i, j = state
-        index = (i * self.maze.col + j) * len(self.actions) + self.actions.index(action)
+        index = (i * self.col + j) * len(self.actions) + self.actions.index(action)
         return self.eligibility_trace[index]
 
     def q(self, state, action):
@@ -1067,7 +1127,13 @@ class ValueGradient(RLApproximation):
         self.eligibility_trace[:] = 0
 
 
-class DQN(RLApproximation):
+class RLApproximationUseKeras(RLApproximation):
+    def stop(self):
+        super().stop()
+        import keras.backend.tensorflow_backend as tfb
+        tfb.clear_session()
+
+class DQN(RLApproximationUseKeras):
     """
     Deep Q-Learning NetWork
     使用一个深度神经网络对Q进行近似
@@ -1127,7 +1193,7 @@ class DQN(RLApproximation):
         self.print_updates([s for s,_,_,_ in traces])
 
 
-class MCPolicyGradient(RLApproximation):
+class MCPolicyGradient(RLApproximationUseKeras):
     """
     MonteCarloPolicyGradient
     使用函数近似策略，蒙特卡洛方法进行训练
@@ -1209,11 +1275,6 @@ class MCPolicyGradient(RLApproximation):
             self.update(state, action, q)
         self.print_updates(set([s for s,_,_,_ in traces]))
 
-    def stop(self):
-        super().stop()
-        import keras.backend.tensorflow_backend as tfb
-        tfb.clear_session()
-
 
 class ActorCritic(MCPolicyGradient):
     """
@@ -1263,8 +1324,8 @@ class ActorCritic(MCPolicyGradient):
             self.update_critic(state, q_target)
             self.eligibility_trace *= self.gamma * self.lambda_
 
-    def reset(self):
-        super().reset()
+    def after_learning(self):
+        super().after_learning()
         self.eligibility_trace[:] = 0
 
 
