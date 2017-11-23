@@ -17,6 +17,7 @@ info = \
 鼠标移到格子上可查看动作的Q值(或概率)
 点击格子可进行路径规划
 训练方法可以在下拉框中选择
+点击训练方法旁边的"?"按扭可查看相关信息
 点击"start/stop"按扭以开始/结束训练
 点击"losses"按扭可查看损失曲线
 点击"hide/show"按扭以隐藏/显示运动轨迹
@@ -34,7 +35,7 @@ ROW = 7                 # 格子的行数
 COL = 7                 # 格子的列数
 FIGURE_HEIGHT = 6       # 损失图的高度
 FIGURE_MIN_WIDTH = 8    # 损失图的最小宽度
-FIGURE_MAX_WIDTH = 14   # 损失图的最大宽度
+FIGURE_MAX_WIDTH = 12   # 损失图的最大宽度
 
 print_time_flag = False
 print_time_func = {'print_value'} # update_qtable
@@ -134,21 +135,36 @@ class Maze:
 
         # 学习方法选择
         learning_method = tk.StringVar()
-        methods = ('Dydamic Programming', 'QLearning', 'QLearningReversed', 'SARSA', 'MonteCarlo', '3STEP-TD', 'Sarsa(λ)', 'ValueGradient', 'DQN', 'mcPolicyGradient', 'actor-critic')
+        rlclasses = [('Dydamic Programming', DydamicProgramming, {}),
+                     ('QLearning', QLearning, {'color_scale':1.5}),
+                     ('QLearningReversed', QLearningReversed, {'color_scale':1.5}),
+                     ('SARSA', SARSA, {'alpha':0.1}),
+                     ('MonteCarlo', MonteCarlo, {'color_scale':1.15}),
+                     ('3STEP-TD', TDLearning, {'nstep':3}),
+                     ('Sarsa(λ)', SarsaLambda, {'lambda_':0.95}),
+                     ('ValueGradient', ValueGradient, {}),
+                     ('DQN', DQN, {}),
+                     ('mcPolicyGradient', MCPolicyGradient, {}),
+                     ('actor-critic', ActorCritic, {})]
+        self.rlmap = {n:(c,p) for n,c,p in rlclasses}
+        methods = [n for n,c,p in rlclasses]
         method_choosen = ttk.Combobox(window, width=14, textvariable=learning_method, values=methods, state='readonly')
         method_choosen.current(0)
         method_choosen.place(x=10, y=canvas_height+52)
         method_choosen.bind('<<ComboboxSelected>>', self.mothod_selected)
 
+        # 显示训练方法信息
+        tk.Button(window, text='?', command=self.show_info, padx=8, anchor='w', justify='left').place(x=146, y=canvas_height + 50)
+
         # 开始按扭
         start_text = tk.StringVar(value='start')
-        tk.Button(window, textvariable=start_text, command=self.start, width=5).place(x=160, y=canvas_height+50)
+        tk.Button(window, textvariable=start_text, command=self.start, width=5).place(x=175, y=canvas_height+50)
 
         # 显示损失按扭
-        tk.Button(window, text='losses', command=self.draw_loss, width=5).place(x=235, y=canvas_height + 50)
+        tk.Button(window, text='losses', command=self.draw_loss, width=5).place(x=250, y=canvas_height + 50)
 
         # 帮助按扭
-        tk.Button(window, text='help', command=self.show_info, width=5).place(x=10, y=canvas_height + 87)
+        tk.Button(window, text='help', command=self.help, width=5).place(x=10, y=canvas_height + 87)
 
         # 显示episode和step数
         tk.Label(window, text='episode:', width=7).place(x=win_width - 180,y=canvas_height + 90)
@@ -183,7 +199,7 @@ class Maze:
         self.started = Value(False)
         self.learning_method = learning_method
         self.method_choosen = method_choosen
-        self.qtext = qtext
+        self._qtext = qtext
         self.qtext_showing = None
         self.path_lines = []
         self.path_state = None
@@ -240,6 +256,10 @@ class Maze:
         self.canvas.coords(self.rec, x1, y1, x2, y2)
         self.state = state
 
+    def qtext(self, state):
+        i,j = state
+        return self._qtext[i][j]
+
     @print_use_time(min_time=1)
     def print_value(self, state, value):
         i,j = state
@@ -256,15 +276,6 @@ class Maze:
     def clear_message(self):
         self.message_text.delete(1.0, tk.END)
 
-    def close(self):
-        self.closed(True)
-        self.event.set()
-        if not self.started:
-            self.quit()
-
-    def quit(self):
-        self.window.quit()
-
     def start(self):
         if self.start_text.get() == 'start':
             self.reset()
@@ -277,35 +288,10 @@ class Maze:
 
     def _start(self):
         method = self.learning_method.get()
-        if method == 'Dydamic Programming':
+        rlc, params = self.rlmap[method]
+        if rlc == DydamicProgramming:
             self.canvas.itemconfig(self.rec, state=tk.HIDDEN)
-            self.rl = DydamicProgramming(self)
-        elif method == 'MonteCarlo':
-            self.rl = MonteCarlo(self, color_scale = 1.15)
-        elif method == 'QLearning':
-            self.rl = QLearning(self, color_scale = 1.5)
-        elif method == 'QLearningReversed':
-            self.rl = QLearningReversed(self, color_scale = 1.5)
-        elif method == 'TDLearning':
-            self.rl = TDLearning(self)
-        elif method == '3STEP-TD':
-            self.rl = TDLearning(self, nstep=3)
-        elif method == 'SARSA':
-            self.rl = SARSA(self, alpha=0.1)
-        elif method == 'Sarsa(λ)':
-            self.rl = SarsaLambda(self, lambda_=0.95)
-        elif method == 'ValueGradient':
-            self.rl = ValueGradient(self, alpha=0.2)
-        elif method == 'DQN':
-            self.rl = DQN(self, alpha=0.1)
-        elif method == 'mcPolicyGradient':
-            self.rl = MCPolicyGradient(self, lr=0.2)
-        elif method == 'actor-critic':
-            self.rl = ActorCritic(self, lr=0.5)
-        else:
-            messagebox.showwarning(title='WARN', message='UNKNOW METHOD: ' + method)
-            self.stop()
-            return
+        self.rl = rlc(maze=self, **params)
         self.rl.learning()
 
     def stop(self):
@@ -318,7 +304,7 @@ class Maze:
             for j in range(self.col):
                 self.canvas.itemconfig(self.values[i][j], text='0' if (i,j) not in self.terminals else '')
                 self.canvas.itemconfig(self.grid[i][j], fill='#EEEEEE')
-                for qtext in self.qtext[i][j].values():
+                for qtext in self._qtext[i][j].values():
                     self.canvas.itemconfig(qtext, text='', fill='#A020F0', state=tk.HIDDEN)
                 self.value_table[i][j] = 0
         self.move_to((0,0))
@@ -327,6 +313,15 @@ class Maze:
         self.print_episode(0)
         self.delete_path()
         self.walked.clear()
+
+    def close(self):
+        self.closed(True)
+        self.event.set()
+        if not self.started:
+            self.quit()
+
+    def quit(self):
+        self.window.quit()
 
     def print_episode(self, episode):
         self.episode_text.set(str(episode))
@@ -338,10 +333,12 @@ class Maze:
         """
         更新状态的Q值
         """
-        for (i,j), qtable in updated:
-            qtext = self.qtext[i][j]
+        for state, qtable in updated:
+            qtext = self.qtext(state)
             maxq = np.max(qtable)
-            for a,q in qtable.items():
+            for a in self.state_actions(state):
+            # for a,q in qtable.items():
+                q = qtable[a]
                 text = qtext[a]
                 q_str = str(round(qtable[a],2)).replace('0.', '.') if 0 < np.abs(q) < 1 else str(int(q))
                 color = '#FF00FF' if q == maxq and q != 0 else ('#CD3278' if q < 0 else '#A020F0')
@@ -370,8 +367,7 @@ class Maze:
             self.qtext_showing = None
 
     def update_qtext_state(self, state, text_state):
-        i, j = state
-        qtext = self.qtext[i][j]
+        qtext = self.qtext(state)
         for text in qtext.values():
             self.canvas.itemconfig(text, state=text_state)
 
@@ -460,8 +456,18 @@ class Maze:
             plt.title('VALUE MSE LOSSES')
             plt.show(block=False)
 
+    def show_info(self):
+        method = self.learning_method.get()
+        cls,_ = self.rlmap[method]
+        doc = cls.__doc__
+        message = ''
+        # 去除每行前后的空白
+        for line in doc.split('\n'):
+            message += line.replace('    ','') + '\n'
+        messagebox.showinfo('INFO', message=message[:-1])
+
     @staticmethod
-    def show_info():
+    def help():
         messagebox.showinfo('README', message=info)
 
     def color(self, value):
@@ -766,6 +772,9 @@ class RLTableau(RL):
 
 
 class DydamicProgramming(RLTableau):
+    """
+    使用动态规划方法计算所有状态到达目标的最短距离和路径
+    """
     def __init__(self, maze):
         RLTableau.__init__(self, maze)
         # 每个状态保存到目标的最短距离和相应路径
@@ -952,9 +961,10 @@ class TDLearning(RLTableau):
 
 class SarsaLambda(RLTableau):
     """
+    使用TD(λ)(eligibility trace)方法进行训练
     q_target = r + γ*r(s',a')
     δ = q_target - q_eval
-    e = 1 对于当前状态s
+    e = 1   对于当前状态s
       = λγe 对于其它状态
     q_eval = q_eval + αδe
     """
@@ -1013,6 +1023,7 @@ class SarsaLambda(RLTableau):
 
 class SARSA(RLTableau):
     """
+    State-Action-Reward-State-Action
     等同于TD(0)或1 step TD
     q_target = r + γ*r(s',a')
     q_eval = q_eval + α(q_target - q_eval)
@@ -1132,12 +1143,14 @@ class DQN(RLApproximationUseKeras):
     """
     Deep Q-Learning NetWork
     使用一个深度神经网络对Q进行近似
+    (本示例只使用了最简单的线性网络)
     为了使网络稳定收敛，使用了以下技巧：
-    1. 训练时对样本进行随机抽样
-    2. 使用两个网络，一个进行训练，一个对Q值进行评估，训练交替进行
+    1. 训练时对样本进行随机抽样以减小样本间的依赖性
+    2. 使用两个网络，一个进行训练，一个对Q值进行评估，
+       训练完一轮之后再用新的网络(复制一份)进行评估(原来的网络继续训练)
     """
     def __init__(self, maze, gamma=0.9, epsilon=0.6, alpha=0.5, color_scale=1.0):
-        RLApproximation.__init__(self, maze, gamma, epsilon, alpha, color_scale)
+        RLApproximationUseKeras.__init__(self, maze, gamma, epsilon, alpha, color_scale)
         # 进行训练的模型
         self.train_model = self.init_model()
         # 进行评估的模型
@@ -1151,7 +1164,7 @@ class DQN(RLApproximationUseKeras):
         from keras.optimizers import SGD
         model = Sequential()
         model.add(Dense(units=1, use_bias=False, input_dim=len(self.states) * len(self.actions), kernel_initializer='zeros'))
-        model.compile(optimizer=SGD(lr=self._alpha, decay=0.001), loss='mse')
+        model.compile(optimizer=SGD(lr=self._alpha), loss='mse')
         return model
 
     def copy_model(self):
@@ -1179,7 +1192,7 @@ class DQN(RLApproximationUseKeras):
     def _learning(self):
         traces = list(set(self.simulate()))
         num = min(3, len(traces))
-        for _ in range((len(traces) // num + 1) * 2):
+        for _ in range((len(traces) // num + 1) * 3):
             samples = self.sample(traces, num)
             x = np.array([self.q_feature(s, a) for s, a, r, s1 in samples])
             y = np.array([r + self.gamma * self.maxq(s1) for s, a, r, s1 in samples])
@@ -1193,17 +1206,13 @@ class MCPolicyGradient(RLApproximationUseKeras):
     MonteCarloPolicyGradient
     使用函数近似策略，蒙特卡洛方法进行训练
     x=f(s,a)
-    p(s,a) = softmax(s,a) = e**θ.x / Σe**θ.x(s,a) (for all a ∊ A(s))
-    ▽lnp = x - (Σe**θ.x(s,a) * x(s,a)) / Σe**θ.x(s,a) (for all a ∊ A(s))
+    p(s,a) = softmax(s,a) (for all a ∊ A(s))
     ∆θ = α * ▽lnp * G (in monte-carlo)
     --- using baseline ---
-    ∆θ = α * ▽lnp * (G - v); v = maxQ(s)
-    --- in actor-critic ---
-    ∆θ = α * ▽lnp * (q - v_eval); q=r+γv_eval(s'), v_eval由critic评估
+    ∆θ = α * ▽lnp * (G - v)
     """
-    def __init__(self, maze, gamma=0.9, epsilon=0.6, lr=0.1, alpha=0.5, color_scale=1.0):
-        RLApproximation.__init__(self, maze, gamma, epsilon, alpha, color_scale)
-        self.lr = lr
+    def __init__(self, maze, gamma=0.9, epsilon=0.6, alpha=0.5, color_scale=1.0):
+        RLApproximationUseKeras.__init__(self, maze, gamma, epsilon, alpha, color_scale)
         self.model = self.init_model()
 
     def init_model(self):
@@ -1212,7 +1221,7 @@ class MCPolicyGradient(RLApproximationUseKeras):
         from keras.optimizers import SGD
         model = Sequential()
         model.add(Dense(units=4, activation='softmax', use_bias=False, input_dim=len(self.states), kernel_initializer='zeros'))
-        model.compile(optimizer=SGD(lr=self.lr), loss='categorical_crossentropy')
+        model.compile(optimizer=SGD(lr=self._alpha), loss='categorical_crossentropy')
         return model
 
     def state_qtable(self, state):
@@ -1276,21 +1285,20 @@ class ActorCritic(MCPolicyGradient):
     ActorCritic
     使用函数近似策略，critic评估状态价值
     x=f(s,a)
-    p(s,a) = softmax(s,a) = e**θ.x / Σe**θ.x(s,a) (for all a ∊ A(s))
-    ▽lnp = x - (Σe**θ.x(s,a) * x(s,a)) / Σe**θ.x(s,a) (for all a ∊ A(s))
+    p(s,a) = softmax(s,a) (for all a ∊ A(s))
     z = f(s)
-    v = critic(s) = w.z
-    q = r + γv'
-    ∆θ = α * ▽lnp * q
+    v_eval = w.z
+    v_target = r + γv_eval(s')
+    δ = v_target - v_eval
+    ∆θ = α * ▽lnp * v_target
     --- using baseline ---
-    ∆θ = α * ▽lnp * (q - v)
-       = α * ▽lnp * (r + γv' - v)
+    ∆θ = α * ▽lnp * δ
     更新critic:
     ∆e = γλ▽v = γλz
-    ∆w = α * e * (q - v) = αδe
+    ∆w = αδe
     """
-    def __init__(self, maze, gamma=0.9, epsilon=0.6, lr=0.1, alpha=0.2, lambda_=0.9, color_scale=1.0):
-        MCPolicyGradient.__init__(self, maze, gamma, epsilon, lr, alpha, color_scale)
+    def __init__(self, maze, gamma=0.9, epsilon=0.6, alpha=0.5, lambda_=0.9, color_scale=1.0):
+        MCPolicyGradient.__init__(self, maze, gamma, epsilon, alpha, color_scale)
         self.lambda_ = lambda_
         self.w = np.zeros(len(self.states))
         self.eligibility_trace = self.w.copy()
