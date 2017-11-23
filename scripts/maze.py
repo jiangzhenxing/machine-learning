@@ -147,7 +147,7 @@ class Maze:
                      ('mcPolicyGradient', MCPolicyGradient, {}),
                      ('actor-critic', ActorCritic, {})]
         self.rlmap = {n:(c,p) for n,c,p in rlclasses}
-        methods = [n for n,c,p in rlclasses]
+        methods = [n for n,_,_ in rlclasses]
         method_choosen = ttk.Combobox(window, width=14, textvariable=learning_method, values=methods, state='readonly')
         method_choosen.current(0)
         method_choosen.place(x=10, y=canvas_height+52)
@@ -225,8 +225,8 @@ class Maze:
     def position_to_state(self, x, y):
         i = y // self.w
         j = x // self.w
-        if i > self.row - 1: i = self.row - 1
-        if j > self.col - 1: j = self.col - 1
+        i = max(min(i, self.row - 1), 0)
+        j = max(min(j, self.col - 1), 0)
         return i,j
 
     def state_position(self, state):
@@ -337,7 +337,6 @@ class Maze:
             qtext = self.qtext(state)
             maxq = np.max(qtable)
             for a in self.state_actions(state):
-            # for a,q in qtable.items():
                 q = qtable[a]
                 text = qtext[a]
                 q_str = str(round(qtable[a],2)).replace('0.', '.') if 0 < np.abs(q) < 1 else str(int(q))
@@ -460,11 +459,7 @@ class Maze:
         method = self.learning_method.get()
         cls,_ = self.rlmap[method]
         doc = cls.__doc__
-        message = ''
-        # 去除每行前后的空白
-        for line in doc.split('\n'):
-            message += line.replace('    ','') + '\n'
-        messagebox.showinfo('INFO', message=message[:-1])
+        messagebox.showinfo('INFO', message=doc.replace('    ','')[:-1])
 
     @staticmethod
     def help():
@@ -474,7 +469,7 @@ class Maze:
         if isinstance(self.rl, DydamicProgramming):
             value = 1 - value / self.rl.max_value
         if value > 1:
-            print(value)
+            print('color value:', value)
             value = 1
         if value >= 0:
             c = int(255 * (1 - value) * self.rl.color_scale)
@@ -489,11 +484,14 @@ class Maze:
             c = max(c, 0)
             c = '%02x' % c
             rgb = '#ff' + c + c
-        # print(value, rgb)
         return rgb
 
 
 class RL:
+    """
+    强化学习的基类
+    基本要素有：状态state，动作action，回报reward，策略policy，价值value，Q及相关参数如折算率γ，学习步长α等
+    """
     def __init__(self, maze, gamma=0.9, epsilon=0.6, alpha=0.5, color_scale=1.0):
         self.maze = maze
         self.gamma = gamma
@@ -507,7 +505,6 @@ class RL:
         self.terminals = maze.terminals
         self.row = maze.row
         self.col = maze.col
-        self.value_star = np.zeros((5,5))
         self.states = maze.states
         self.episode = 0
         self.step = 0
@@ -710,6 +707,9 @@ class RL:
 
 
 class RLTableau(RL):
+    """
+    使用查表方法学习的强化学习
+    """
     def __init__(self, maze, gamma=0.9, epsilon=0.6, alpha=0.5, color_scale=1.0):
         RL.__init__(self, maze, gamma, epsilon, alpha, color_scale)
         self.qtable = [[self._state_q_init((i,j)) for j in range(maze.col)] for i in range(maze.row)]
@@ -881,6 +881,7 @@ class DydamicProgramming(RLTableau):
 class QLearning(RLTableau):
     """
     QLearning
+    使用下一状态的最大Q值来计算当前状态的价值
     q_target = r + γv(s')
     q_eval = q_eval + α(q_target - q_eval)
     """
@@ -908,6 +909,7 @@ class QLearningReversed(RLTableau):
 class MonteCarlo(RLTableau):
     """
     使用Monte-Carlo方法进行学习
+    使用一次实验中获得的真实回报来计算状态的价值
     q_target = r1 + γ*r2 + (γ**2)*r3 + ...
     q_eval = q_eval + α(q_target - q_eval)
     """
@@ -965,7 +967,7 @@ class SarsaLambda(RLTableau):
     q_target = r + γ*r(s',a')
     δ = q_target - q_eval
     e = 1   对于当前状态s
-      = λγe 对于其它状态
+    | = λγe 对于其它状态
     q_eval = q_eval + αδe
     """
     def __init__(self, maze, lambda_=0.9):
@@ -1024,6 +1026,7 @@ class SarsaLambda(RLTableau):
 class SARSA(RLTableau):
     """
     State-Action-Reward-State-Action
+    使用下一状态的真实Q值来计算当前状态的价值
     等同于TD(0)或1 step TD
     q_target = r + γ*r(s',a')
     q_eval = q_eval + α(q_target - q_eval)
@@ -1194,9 +1197,10 @@ class DQN(RLApproximationUseKeras):
         num = min(3, len(traces))
         for _ in range((len(traces) // num + 1) * 3):
             samples = self.sample(traces, num)
-            x = np.array([self.q_feature(s, a) for s, a, r, s1 in samples])
-            y = np.array([r + self.gamma * self.maxq(s1) for s, a, r, s1 in samples])
-            self.train_model.train_on_batch(x, y)
+            for s, a, r, s1 in samples:
+                x = np.array([self.q_feature(s, a)])
+                y = np.array([r + self.gamma * self.maxq(s1)])
+                self.train_model.train_on_batch(x, y)
         self.copy_model()
         self.print_updates([s for s,_,_,_ in traces])
 
