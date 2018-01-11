@@ -4,9 +4,7 @@ import numpy as np
 import pandas as pd
 import time
 import threading
-from tkinter import ttk
-from tkinter import messagebox
-from tkinter import font
+from tkinter import ttk,messagebox,font
 
 info = \
 """
@@ -122,22 +120,23 @@ class Maze:
         canvas.bind('<Button-1>', func=lambda e: self.draw_path(self.position_to_state(e.x, e.y)))
 
         # 速度调节按扭
-        tk.Button(window, text='faster', command=lambda:self.change_period(0.5)).place(x=10, y=canvas_height+10)
-        tk.Button(window, text='slower', command=lambda:self.change_period(2)).place(x=85, y=canvas_height+10)
+        tk.Button(window, text='faster', command=lambda:self.change_period(0.5)).place(x=10, y=canvas_height+12)
+        tk.Button(window, text='slower', command=lambda:self.change_period(2)).place(x=80, y=canvas_height+12)
 
         # 暂停按扭
         pause_text = tk.StringVar(value='pause')
-        tk.Button(window, textvariable=pause_text, command=self.pause, width=5).place(x=160, y=canvas_height+10)
+        tk.Button(window, textvariable=pause_text, command=self.pause, width=5).place(x=160, y=canvas_height+12)
 
         # 隐藏路径按扭
-        trace_text = tk.StringVar(value='hide')
-        tk.Button(window, textvariable=trace_text, command=self.hide_trace, width=5).place(x=240, y=canvas_height + 10)
+        trace_text = tk.StringVar(value='hide trace')
+        tk.Button(window, textvariable=trace_text, command=self.hide_trace, width=8).place(x=250, y=canvas_height + 12)
 
         # 学习方法选择
         learning_method = tk.StringVar()
-        rlclasses = [('Dydamic Programming', DydamicProgramming, {}),
-                     ('QLearning', QLearning, {'color_scale':1.5}),
-                     ('QLearningReversed', QLearningReversed, {'color_scale':1.5}),
+        rlclasses = [('Dynamic Programming', DynamicProgramming, {}),
+                     ('Wide Search', WideSearch, {}),
+                     ('Q-Learning', QLearning, {'color_scale':1.5}),
+                     ('Q-Learning Reversed', QLearningReversed, {'color_scale':1.5}),
                      ('SARSA', SARSA, {'alpha':0.1}),
                      ('MonteCarlo', MonteCarlo, {'color_scale':1.15}),
                      ('3STEP-TD', TDLearning, {'nstep':3}),
@@ -205,11 +204,12 @@ class Maze:
         self.path_state = None
         self.rl = None
         self.traces = []
+        self.outlines = {}
         # 显示的价值，判断是否需要更新显示的时候使用，每次调用canvas.itemget从组件中获取速度太慢
         self.value_table = [[0 for _ in range(row)] for _ in range(col)]
         self.walked = set()
-        # 使用动态规划把状态到目标的最小距离计算出来
-        self.distances = DydamicProgramming(self).distances()
+        # 把状态到目标的最小距离计算出来
+        self.distances = WideSearch(self).distances()
 
     def create_rectangle(self, i, j, **config):
         return self.canvas.create_rectangle(j * self.w, i * self.w, (j+1) * self.w, (i+1) * self.w, **config)
@@ -217,7 +217,7 @@ class Maze:
     def mothod_selected(self, event):
         self.method_choosen.selection_clear()
         method = self.learning_method.get()
-        if method == 'Dydamic Programming' and not self.started:
+        if method in ('Dynamic Programming', 'Wide Search') and not self.started:
             self.canvas.itemconfig(self.rec, state=tk.HIDDEN)
         else:
             self.canvas.itemconfig(self.rec, state=tk.NORMAL)
@@ -289,9 +289,9 @@ class Maze:
     def _start(self):
         method = self.learning_method.get()
         rlc, params = self.rlmap[method]
-        if rlc == DydamicProgramming:
-            self.canvas.itemconfig(self.rec, state=tk.HIDDEN)
         self.rl = rlc(maze=self, **params)
+        if isinstance(self.rl, DynamicProgramming):
+            self.canvas.itemconfig(self.rec, state=tk.HIDDEN)
         self.rl.learning()
 
     def stop(self):
@@ -313,6 +313,7 @@ class Maze:
         self.print_episode(0)
         self.delete_path()
         self.walked.clear()
+        self.clear_outline()
 
     def close(self):
         self.closed(True)
@@ -348,7 +349,7 @@ class Maze:
         显示状态的Q值
         """
         # print('show_q:', state)
-        if state == self.qtext_showing or self.rl is None or isinstance(self.rl, DydamicProgramming):
+        if state == self.qtext_showing or self.rl is None or isinstance(self.rl, DynamicProgramming):
             return
         # print('show_q:', state)
         self.hide_q()
@@ -405,6 +406,7 @@ class Maze:
     def delete_path(self):
         for line in self.path_lines:
             self.canvas.delete(line)
+        self.path_lines.clear()
         self.path_state = None
 
     def next_state(self, state, action):
@@ -429,15 +431,27 @@ class Maze:
     def clear_trace(self):
         for line in self.traces:
             self.canvas.delete(line)
+        self.traces.clear()
 
     def hide_trace(self):
-        if self.trace_text.get() == 'hide':
+        if self.trace_text.get() == 'hide trace':
             self.print_trace_flag = False
             self.clear_trace()
-            self.trace_text.set('show')
-        elif self.trace_text.get() == 'show':
+            self.trace_text.set('show trace')
+        elif self.trace_text.get() == 'show trace':
             self.print_trace_flag = True
-            self.trace_text.set('hide')
+            self.trace_text.set('hide trace')
+
+    def draw_outline(self, state, color='#ccc'):
+        if state not in self.outlines:
+            outline = self.create_rectangle(*state, outline=color)
+            self.outlines[state] = outline
+            return True
+
+    def clear_outline(self):
+        for outline in self.outlines.values():
+            self.canvas.delete(outline)
+        self.outlines.clear()
 
     def draw_loss(self):
         if self.rl is None:
@@ -466,7 +480,7 @@ class Maze:
         messagebox.showinfo('README', message=info)
 
     def color(self, value):
-        if isinstance(self.rl, DydamicProgramming):
+        if isinstance(self.rl, DynamicProgramming):
             value = 1 - value / self.rl.max_value
         if value > 1:
             print('color value:', value)
@@ -771,9 +785,9 @@ class RLTableau(RL):
         self.print_updates([state])
 
 
-class DydamicProgramming(RLTableau):
+class DynamicProgramming(RLTableau):
     """
-    使用动态规划方法计算所有状态到达目标的最短距离和路径
+    使用动态规划方法计算(0,0)状态到达目标状态的最短距离和路径
     """
     def __init__(self, maze):
         RLTableau.__init__(self, maze)
@@ -785,6 +799,7 @@ class DydamicProgramming(RLTableau):
         # 最大距离为四个角离目标的最大距离(再加1)，染色时使用最大距离对颜色进行缩放
         self.max_value = np.max([np.abs(np.subtract(self.goal, s)).sum() for s in [(0,0), (0, maze.col-1), (maze.row-1,0), (maze.row-1,maze.col-1)]]) + 1
         self.neighbors = maze.neighbors
+        self.nd = 0
 
     def _state_q_init(self, state):
         """
@@ -844,20 +859,44 @@ class DydamicProgramming(RLTableau):
         return path
 
     def _learning(self):
-        to_eval = [self.goal]  # 待评估状态
-        while len(to_eval) > 0:
-            state = to_eval.pop(0)
-            dist0 = self.state_dist(state)
-            neighbors = self.neighbors(state)
-            # print('eval:', state, neighbors)
-            for neighbor in neighbors:
-                dist = self.dist(neighbor, state) + dist0
-                if dist < self.state_dist(neighbor):
-                    self.update_path(neighbor, dist, self.neighbor_action(neighbor, state))
-                    self.print_updates([neighbor])
-                    to_eval.append(neighbor)
-                    self.wait_period()
+        import sys
+        sys.setrecursionlimit(10000)  # 最大递归深度设置为一万
+        start = (0,0)
+        problems = set()
+        self.dyna_program_path(state=start, parent_problems=problems)
+        for r in self.path:
+            print(r)
+        print(self.nd)
         raise StopLearning
+
+    def dyna_program_path(self, state, parent_problems):
+        self.update_step()
+        if self.maze.draw_outline(state, color='#BBB'):
+            self.wait_period(0.5)
+        if state == self.goal:
+            return state,0
+        # 已经求解过了直接返回结果
+        if self.state_path(state):
+            return state, self.state_dist(state)
+        neighbors = self.maze.neighbors(state)
+        # 子邻居到目标的最短距离
+        nb_dis = []
+        print('state:', state, 'neighbors:', neighbors, 'parent_problems:', len(parent_problems))
+        for n in neighbors:
+            if (state,n) not in parent_problems:
+                pb = parent_problems.copy()
+                pb.add((state,n))
+                nb_dis.append(self.dyna_program_path(n, pb))
+        # 当前状态经过不同邻居到目标的最短距离
+        dis = [(n, d + self.dist(state, n)) for n,d in nb_dis if n is not None]
+        # 当前状态到目标的最短距离
+        if len(dis) == 0:
+            return None, None
+        n,d = min(dis, key=lambda nb:nb[1])
+        self.update_path(state, d, self.neighbor_action(state,n))
+        self.print_updates([state])
+        self.wait_period(0.5)
+        return state,d
 
     def distances(self):
         """
@@ -876,6 +915,31 @@ class DydamicProgramming(RLTableau):
                     to_eval.append(neighbor)
         distance = [[self.state_dist((i,j)) for j in range(self.col)] for i in range(self.row)]
         return distance
+
+
+class WideSearch(DynamicProgramming):
+    """
+    使用广度优先搜索算法计算所有状态到达目标的最短距离和路径
+    """
+    def _learning(self):
+        self.wide_search()
+        raise StopLearning
+
+    def wide_search(self):
+        to_eval = [self.goal]  # 待评估状态
+        while len(to_eval) > 0:
+            state = to_eval.pop(0)
+            dist0 = self.state_dist(state)
+            neighbors = self.neighbors(state)
+            # print('eval:', state, neighbors)
+            for neighbor in neighbors:
+                dist = self.dist(neighbor, state) + dist0
+                if dist < self.state_dist(neighbor):
+                    self.update_path(neighbor, dist, self.neighbor_action(neighbor, state))
+                    self.print_updates([neighbor])
+                    to_eval.append(neighbor)
+                    self.wait_period()
+                self.update_step()
 
 
 class QLearning(RLTableau):
@@ -1293,9 +1357,9 @@ class ActorCritic(MCPolicyGradient):
     z = f(s)
     v_eval = w.z
     v_target = r + γv_eval(s')
-    δ = v_target - v_eval
     ∆θ = α * ▽lnp * v_target
     --- using baseline ---
+    δ = v_target - v_eval
     ∆θ = α * ▽lnp * δ
     更新critic:
     ∆e = γλ▽v = γλz
@@ -1333,6 +1397,10 @@ class ActorCritic(MCPolicyGradient):
     def after_learning(self):
         super().after_learning()
         self.eligibility_trace[:] = 0
+
+
+class DynaQ:
+    pass
 
 
 class StopLearning(BaseException):
